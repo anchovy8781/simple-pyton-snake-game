@@ -1,5 +1,5 @@
-# ADOFAI Map Generator 백엔드 CI: 모든 브랜치 push와 main 대상 PR에서
-# backend/ 의 pytest 테스트 스위트를 실행한다.
+# ADOFAI Map Generator CI: 모든 브랜치 push와 main 대상 PR에서
+# backend/ 의 pytest 스위트와 frontend/ 의 flutter analyze/test를 실행한다.
 
 name: CI
 
@@ -38,3 +38,27 @@ jobs:
 
       - name: Run tests
         run: pytest -q
+
+  frontend-checks:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Run tests
+        run: flutter test
