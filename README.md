@@ -19,8 +19,12 @@
 | 백엔드 | Python 3.12, FastAPI |
 | 오디오 분석 | librosa, NumPy |
 | 데스크톱 UI | Flutter |
-| AI 패턴 생성/편집 | Claude API |
+| AI 패턴 생성/편집 | Google Gemini API (무료 티어) — 키 없으면 규칙 기반 파서로 대체 |
 | 데이터 저장 | JSON |
+
+> **참고**: 초기 기획 단계에서는 AI 연동에 Claude API를 검토했지만, 비용이 들지 않는 개발/테스트
+> 환경을 원해 4단계부터는 **Google Gemini 무료 티어**로 대체했습니다. `GEMINI_API_KEY`가 없어도
+> 규칙 기반 파서가 핵심 편집 기능을 대체 수행하므로 API 키 없이도 전체 기능을 테스트할 수 있습니다.
 
 ## 개발 로드맵
 
@@ -29,15 +33,15 @@
 - [x] 1단계 — 프로젝트 생성 (`backend/` FastAPI 스캐폴드, 테스트 환경)
 - [x] 2단계 — 오디오 분석 (BPM/비트/다운비트/드롭/음량 변화/템포 변화 검출)
 - [x] 3단계 — 맵 생성 엔진 (리듬 패턴 → ADOFAI 타일 시퀀스, 난이도 반영)
-- [ ] 4단계 — Claude 연동 (패턴 생성 및 구간별 재생성 프롬프트/클라이언트)
+- [x] 4단계 — AI 연동 (Gemini 무료 티어 + 규칙 기반 폴백으로 자연어 구간 편집)
 - [ ] 5단계 — GUI 제작 (Flutter 데스크톱 앱)
 - [ ] 6단계 — 파일 저장 (ADOFAI `.adofai` 커스텀 레벨 포맷 저장/불러오기)
 - [ ] 7단계 — 테스트 (각 모듈 단위 테스트 + 통합 테스트)
 - [ ] 8단계 — 배포용 실행 파일(.exe) 패키징 (백엔드: PyInstaller, GUI: Flutter Windows build)
 
-## 현재 상태 (3단계까지 완료)
+## 현재 상태 (4단계까지 완료)
 
-`backend/` 아래에 FastAPI 프로젝트 골격을 구성했습니다. 이후 단계(AI 연동, 파일 저장)의 모듈 자리(`app/ai`, `app/storage`)를 미리 잡아두었고, 헬스체크 엔드포인트와 테스트가 동작합니다.
+`backend/` 아래에 FastAPI 프로젝트 골격을 구성했습니다. 이후 단계(파일 저장)의 모듈 자리(`app/storage`)를 미리 잡아두었고, 헬스체크 엔드포인트와 테스트가 동작합니다.
 
 `app/audio`에 librosa 기반 오디오 분석 파이프라인을 구현했습니다.
 
@@ -61,6 +65,17 @@
 - API: `POST /mapgen/generate` (음악 파일 + 난이도 → 맵 JSON), `POST /mapgen/regenerate-segment` (기존 맵 + 구간 → 해당 구간만 재생성된 맵)
 
 시드(seed)를 지정하면 동일한 입력에 대해 항상 동일한 패턴이 생성됩니다(재현 가능성 확보, 테스트에도 활용).
+
+`app/ai`에 자연어 편집 지시를 처리하는 AI 연동 계층을 구현했습니다.
+
+- 데이터 모델: `app/ai/models.py` — `EditInstruction`(구간, 난이도 변화량, 화려함/반복/타이밍 플래그, 파싱 출처)
+- Gemini 클라이언트: `app/ai/gemini_client.py` — `GEMINI_API_KEY` 설정 시 `google-generativeai`로 호출, 테스트를 위한 함수 주입(`generate_fn`) 지원
+- 규칙 기반 폴백: `app/ai/rule_based_parser.py` — 정규식/키워드로 "20~35초를 더 어렵게", "드롭 부분을 화려하게", "후반부를 쉽게", "반복을 줄여", "박자를 더 정확하게 맞춰" 같은 대표 패턴을 처리 (API 키가 없어도 항상 동작)
+- 통합 파서: `app/ai/instruction_parser.py` — Gemini가 설정돼 있으면 우선 시도하고, 키가 없거나 호출/응답 파싱이 실패하면 규칙 기반으로 자동 대체
+- 편집 적용: `app/ai/edit_engine.py` — `EditInstruction`을 난이도 프로파일 조정(난이도 이동, 드롭 강조 가중치, 반복 허용 횟수, 세분 확률)으로 변환해 `mapgen.regenerate_segment()`에 적용
+- API: `POST /ai/edit-segment` (기존 맵 + 자연어 지시 → 해당 구간만 반영된 새 맵 + 파싱 결과)
+
+이 개발 컨테이너에는 `GEMINI_API_KEY`가 없어 실제 Gemini 호출은 검증하지 못했고, 규칙 기반 폴백 경로로 전체 기능을 테스트했습니다. Gemini 키를 `.env`에 넣으면 자동으로 AI 경로가 우선 사용됩니다.
 
 ### 실행 방법
 
@@ -89,10 +104,10 @@ backend/
   app/
     main.py            # FastAPI 앱 진입점
     core/config.py     # 환경설정 (Pydantic Settings)
-    api/routes/         # API 라우터 (health, audio, mapgen)
+    api/routes/         # API 라우터 (health, audio, mapgen, ai_edit)
     audio/               # 오디오 분석 모듈 (BPM/비트/다운비트/에너지/템포변화/드롭)
     mapgen/              # 맵 생성 엔진 (난이도별 회전 패턴, 구간 재생성)
-    ai/                  # (4단계) Claude API 연동
+    ai/                  # AI 연동 (Gemini 무료 티어 + 규칙 기반 폴백, 자연어 구간 편집)
     storage/             # (6단계) ADOFAI 레벨 파일 저장/불러오기
     models/              # 공용 데이터 모델 (Pydantic)
   tests/                # pytest 테스트

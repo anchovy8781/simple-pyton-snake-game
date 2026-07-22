@@ -2,7 +2,7 @@
 
 import random
 
-from app.mapgen.difficulty import DIFFICULTY_PROFILES
+from app.mapgen.difficulty import DIFFICULTY_PROFILES, DifficultyProfile
 from app.mapgen.models import Difficulty, GeneratedMap, Tile
 from app.mapgen.pattern import generate_angles
 from app.mapgen.schedule import TileTiming, build_tile_schedule
@@ -44,6 +44,7 @@ def regenerate_segment(
     start_sec: float,
     end_sec: float,
     difficulty: Difficulty | None = None,
+    profile_override: DifficultyProfile | None = None,
     seed: int | None = None,
 ) -> GeneratedMap:
     """기존 맵 중 [start_sec, end_sec] 구간의 회전 패턴만 새로 생성한다.
@@ -51,6 +52,10 @@ def regenerate_segment(
     타일의 박자 배치(시간)는 그대로 유지하고 회전각만 다시 만들기 때문에
     박자 정확도에는 영향이 없다. 구간 경계 바깥과의 진입/퇴장 각도를 정교하게
     맞추는 것은 4단계(AI 편집)에서 자연어 지시에 맞춰 다듬을 여지로 남겨둔다.
+
+    profile_override를 넘기면 난이도 프리셋 대신 그 프로파일을 그대로 사용한다.
+    "화려하게", "반복을 줄여" 같은 자연어 편집 지시를 특정 파라미터만 조정한
+    임시 프로파일로 변환해 적용할 때 쓰인다(app/ai/edit_engine.py 참고).
     """
     if start_sec >= end_sec:
         raise ValueError("start_sec는 end_sec보다 작아야 합니다")
@@ -62,7 +67,7 @@ def regenerate_segment(
         raise ValueError("지정한 구간에 해당하는 타일이 없습니다")
 
     result_difficulty = difficulty if difficulty is not None else existing_map.difficulty
-    profile = DIFFICULTY_PROFILES[result_difficulty]
+    profile = profile_override if profile_override is not None else DIFFICULTY_PROFILES[result_difficulty]
     rng = random.Random(seed)
 
     segment_timings = [

@@ -15,8 +15,8 @@ class Settings(BaseSettings):
 
     app_name: str = "ADOFAI Map Generator"
 
-    # 4단계: Claude 연동
-    anthropic_api_key: str = ""
+    # 4단계: AI 연동 (Google Gemini 무료 티어). 비어 있으면 규칙 기반 파서로 대체 동작한다.
+    gemini_api_key: str = ""
 
     # 업로드/생성 결과 저장 위치
     storage_dir: Path = Path("./data")

@@ -10,8 +10,8 @@ numpy==1.26.4
 soundfile==0.12.1
 audioread==3.1.0  # mp3 디코딩 백엔드 (ffmpeg/gstreamer 설치가 필요할 수 있음)
 
-# 4단계: Claude 연동
-anthropic==0.40.0
+# 4단계: AI 연동 (무료 티어인 Google Gemini API 사용, 키 없으면 규칙 기반 파서로 대체)
+google-generativeai==0.8.6
 
 # 테스트
 pytest==8.3.4

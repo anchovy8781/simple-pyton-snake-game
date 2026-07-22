@@ -7,7 +7,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import audio, health, mapgen
+from app.api.routes import ai_edit, audio, health, mapgen
 from app.core.config import get_settings
 
 
@@ -27,6 +27,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(audio.router)
     app.include_router(mapgen.router)
+    app.include_router(ai_edit.router)
 
     return app
 
