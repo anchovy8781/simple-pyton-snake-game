@@ -27,7 +27,7 @@
 기존 코드를 임의로 삭제하지 않고, 각 단계가 끝날 때마다 실행 가능한 상태를 유지하며 순서대로 진행합니다.
 
 - [x] 1단계 — 프로젝트 생성 (`backend/` FastAPI 스캐폴드, 테스트 환경)
-- [ ] 2단계 — 오디오 분석 (BPM/비트/다운비트/드롭/음량 변화 검출)
+- [x] 2단계 — 오디오 분석 (BPM/비트/다운비트/드롭/음량 변화/템포 변화 검출)
 - [ ] 3단계 — 맵 생성 엔진 (리듬 패턴 → ADOFAI 타일 시퀀스, 난이도 반영)
 - [ ] 4단계 — Claude 연동 (패턴 생성 및 구간별 재생성 프롬프트/클라이언트)
 - [ ] 5단계 — GUI 제작 (Flutter 데스크톱 앱)
@@ -35,9 +35,21 @@
 - [ ] 7단계 — 테스트 (각 모듈 단위 테스트 + 통합 테스트)
 - [ ] 8단계 — 배포용 실행 파일(.exe) 패키징 (백엔드: PyInstaller, GUI: Flutter Windows build)
 
-## 현재 상태 (1단계)
+## 현재 상태 (2단계까지 완료)
 
-`backend/` 아래에 FastAPI 프로젝트 골격을 구성했습니다. 이후 단계(오디오 분석, 맵 생성 엔진, AI 연동, 파일 저장)의 모듈 자리(`app/audio`, `app/mapgen`, `app/ai`, `app/storage`)를 미리 잡아두었고, 헬스체크 엔드포인트와 테스트가 동작합니다.
+`backend/` 아래에 FastAPI 프로젝트 골격을 구성했습니다. 이후 단계(맵 생성 엔진, AI 연동, 파일 저장)의 모듈 자리(`app/mapgen`, `app/ai`, `app/storage`)를 미리 잡아두었고, 헬스체크 엔드포인트와 테스트가 동작합니다.
+
+`app/audio`에 librosa 기반 오디오 분석 파이프라인을 구현했습니다.
+
+- BPM/비트 검출: `app/audio/beats.py` (`librosa.beat.beat_track`)
+- 다운비트(마디 첫 박) 추정: `app/audio/downbeats.py` — 박자 위상별 onset envelope 합을 비교하는 휴리스틱
+- 음량(에너지) 곡선: `app/audio/energy.py` — RMS(dB) 계산 + API 응답용 다운샘플링
+- 템포 변화 감지: `app/audio/tempo_changes.py` — 구간별 로컬 템포를 추정해 변화 지점만 추출
+- 드롭(빌드업 이후 에너지 급상승) 감지: `app/audio/drops.py` — 상승 후 일정 시간 유지되는 경우만 채택
+- 전체 파이프라인: `app/audio/analyzer.py` (`analyze_audio`)
+- API: `POST /audio/analyze` (mp3/ogg/wav 파일 업로드 → 분석 결과 JSON)
+
+**주의(mp3 지원)**: mp3 디코딩은 `audioread`가 시스템에 설치된 **ffmpeg**(또는 gstreamer)를 통해 처리합니다. 이 개발 컨테이너에는 ffmpeg가 없어 mp3 디코딩을 직접 검증하지 못했고, wav로만 실동작을 확인했습니다. wav/ogg는 `soundfile`(libsndfile)로 바로 디코딩되어 문제없습니다. 로컬 실행 시 mp3를 쓰려면 ffmpeg를 PATH에 설치해야 하며, 8단계(exe 패키징)에서는 ffmpeg 바이너리를 함께 번들링해야 합니다.
 
 ### 실행 방법
 
@@ -66,8 +78,8 @@ backend/
   app/
     main.py            # FastAPI 앱 진입점
     core/config.py     # 환경설정 (Pydantic Settings)
-    api/routes/         # API 라우터
-    audio/               # (2단계) 오디오 분석 모듈
+    api/routes/         # API 라우터 (health, audio)
+    audio/               # 오디오 분석 모듈 (BPM/비트/다운비트/에너지/템포변화/드롭)
     mapgen/              # (3단계) 맵 생성 엔진
     ai/                  # (4단계) Claude API 연동
     storage/             # (6단계) ADOFAI 레벨 파일 저장/불러오기

@@ -8,6 +8,7 @@ pydantic-settings==2.7.1
 librosa==0.10.2.post1
 numpy==1.26.4
 soundfile==0.12.1
+audioread==3.1.0  # mp3 디코딩 백엔드 (ffmpeg/gstreamer 설치가 필요할 수 있음)
 
 # 4단계: Claude 연동
 anthropic==0.40.0
