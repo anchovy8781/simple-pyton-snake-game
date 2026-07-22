@@ -7,17 +7,29 @@ def test_all_difficulties_have_profiles() -> None:
         assert difficulty in DIFFICULTY_PROFILES
 
 
-def test_higher_difficulty_has_more_angle_options_and_less_straight_bias() -> None:
+def _straight_weight(profile) -> float:
+    return profile.beat_split_weights.get(1, 0.0)
+
+
+def test_higher_difficulty_splits_beats_more_and_has_less_straight_bias() -> None:
     easy = DIFFICULTY_PROFILES[Difficulty.EASY]
     normal = DIFFICULTY_PROFILES[Difficulty.NORMAL]
     hard = DIFFICULTY_PROFILES[Difficulty.HARD]
     extreme = DIFFICULTY_PROFILES[Difficulty.EXTREME]
 
     assert (
-        len(easy.allowed_turn_angles)
-        <= len(normal.allowed_turn_angles)
-        <= len(hard.allowed_turn_angles)
-        <= len(extreme.allowed_turn_angles)
+        max(easy.beat_split_weights)
+        <= max(normal.beat_split_weights)
+        <= max(hard.beat_split_weights)
+        <= max(extreme.beat_split_weights)
     )
-    assert easy.straight_weight > normal.straight_weight > hard.straight_weight > extreme.straight_weight
+    assert _straight_weight(easy) > _straight_weight(normal) > _straight_weight(hard)
     assert easy.max_consecutive_repeat >= normal.max_consecutive_repeat >= extreme.max_consecutive_repeat
+
+
+def test_beat_split_weights_are_positive() -> None:
+    for profile in DIFFICULTY_PROFILES.values():
+        assert profile.beat_split_weights
+        for split_n, weight in profile.beat_split_weights.items():
+            assert split_n >= 1
+            assert weight > 0

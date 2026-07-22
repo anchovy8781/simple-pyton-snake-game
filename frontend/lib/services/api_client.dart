@@ -76,6 +76,43 @@ class ApiClient {
     );
   }
 
+  /// POST /storage/export — 맵을 실제 ADOFAI 커스텀 레벨(.adofai) 파일 내용으로 변환한다.
+  Future<Uint8List> exportAdofai({
+    required GeneratedMap existingMap,
+    required String songFilename,
+    String songName = '',
+    String artist = '',
+    String author = '',
+    int offsetMs = 0,
+    String outputFilename = 'level',
+  }) async {
+    final response = await _client.post(
+      _uri('/storage/export'),
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'existing_map': existingMap.toJson(),
+        'song_filename': songFilename,
+        'song_name': songName,
+        'artist': artist,
+        'author': author,
+        'offset_ms': offsetMs,
+        'output_filename': outputFilename,
+      }),
+    );
+
+    _checkStatus(response.statusCode, response.body);
+    return response.bodyBytes;
+  }
+
+  /// POST /storage/import — 기존 .adofai 파일을 업로드해 맵으로 되돌린다.
+  Future<GeneratedMap> importAdofai({required Uint8List fileBytes, required String fileName}) async {
+    final request = http.MultipartRequest('POST', _uri('/storage/import'))
+      ..files.add(http.MultipartFile.fromBytes('file', fileBytes, filename: fileName));
+
+    final body = await _send(request);
+    return GeneratedMap.fromJson(jsonDecode(body) as Map<String, dynamic>);
+  }
+
   Future<String> _send(http.MultipartRequest request) async {
     final streamedResponse = await _client.send(request);
     final response = await http.Response.fromStream(streamedResponse);

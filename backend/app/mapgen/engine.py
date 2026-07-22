@@ -17,7 +17,9 @@ def generate_map(
     rng = random.Random(seed)
 
     tile_timings = build_tile_schedule(analysis, profile, rng)
-    turn_angles = generate_angles(tile_timings, profile, rng)
+    turn_angles = generate_angles(
+        tile_timings, profile.max_consecutive_repeat, rng, flip_probability=profile.flip_probability
+    )
 
     tiles = [
         Tile(
@@ -27,6 +29,8 @@ def generate_map(
             is_downbeat=timing.is_downbeat,
             is_drop_emphasis=timing.is_drop,
             energy_db=timing.energy_db,
+            split_n=timing.split_n,
+            bpm=timing.bpm,
         )
         for i, (timing, angle) in enumerate(zip(tile_timings, turn_angles, strict=True))
     ]
@@ -47,14 +51,16 @@ def regenerate_segment(
     profile_override: DifficultyProfile | None = None,
     seed: int | None = None,
 ) -> GeneratedMap:
-    """기존 맵 중 [start_sec, end_sec] 구간의 회전 패턴만 새로 생성한다.
+    """기존 맵 중 [start_sec, end_sec] 구간의 회전 "방향"만 새로 생성한다.
 
-    타일의 박자 배치(시간)는 그대로 유지하고 회전각만 다시 만들기 때문에
-    박자 정확도에는 영향이 없다. 구간 경계 바깥과의 진입/퇴장 각도를 정교하게
-    맞추는 것은 4단계(AI 편집)에서 자연어 지시에 맞춰 다듬을 여지로 남겨둔다.
+    타일의 박자 배치(시간)와 split_n(박 분할)은 그대로 유지하고 방향(부호)만
+    다시 만들기 때문에 박자 정확도에는 영향이 없다 — ADOFAI에서는 회전각의
+    크기가 곧 박자이므로, 크기를 바꾸지 않아야 타이밍이 보존된다. 구간
+    경계 바깥과의 진입/퇴장 각도를 정교하게 맞추는 것은 4단계(AI 편집)에서
+    자연어 지시에 맞춰 다듬을 여지로 남겨둔다.
 
     profile_override를 넘기면 난이도 프리셋 대신 그 프로파일을 그대로 사용한다.
-    "화려하게", "반복을 줄여" 같은 자연어 편집 지시를 특정 파라미터만 조정한
+    "반복을 줄여" 같은 자연어 편집 지시를 max_consecutive_repeat만 조정한
     임시 프로파일로 변환해 적용할 때 쓰인다(app/ai/edit_engine.py 참고).
     """
     if start_sec >= end_sec:
@@ -76,6 +82,8 @@ def regenerate_segment(
             is_downbeat=existing_map.tiles[i].is_downbeat,
             is_drop=existing_map.tiles[i].is_drop_emphasis,
             energy_db=existing_map.tiles[i].energy_db,
+            split_n=existing_map.tiles[i].split_n,
+            bpm=existing_map.tiles[i].bpm,
         )
         for i in segment_indices
     ]
@@ -88,7 +96,12 @@ def regenerate_segment(
             initial_sign = 1 if prev_angle > 0 else -1
 
     new_angles = generate_angles(
-        segment_timings, profile, rng, force_first_straight=False, initial_sign=initial_sign
+        segment_timings,
+        profile.max_consecutive_repeat,
+        rng,
+        force_first_straight=False,
+        initial_sign=initial_sign,
+        flip_probability=profile.flip_probability,
     )
 
     new_tiles = list(existing_map.tiles)

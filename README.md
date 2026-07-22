@@ -35,13 +35,55 @@
 - [x] 3단계 — 맵 생성 엔진 (리듬 패턴 → ADOFAI 타일 시퀀스, 난이도 반영)
 - [x] 4단계 — AI 연동 (Gemini 무료 티어 + 규칙 기반 폴백으로 자연어 구간 편집)
 - [x] 5단계 — GUI 제작 (Flutter 데스크톱 앱)
-- [ ] 6단계 — 파일 저장 (ADOFAI `.adofai` 커스텀 레벨 포맷 저장/불러오기)
+- [x] 6단계 — 파일 저장 (ADOFAI `.adofai` 커스텀 레벨 포맷 저장/불러오기)
 - [ ] 7단계 — 테스트 (각 모듈 단위 테스트 + 통합 테스트)
 - [ ] 8단계 — 배포용 실행 파일(.exe) 패키징 (백엔드: PyInstaller, GUI: Flutter Windows build)
 
-## 현재 상태 (5단계까지 완료)
+## ⚠️ 6단계에서 발견하고 수정한 핵심 오류 (박자 정확도)
 
-`backend/` 아래에 FastAPI 프로젝트 골격을 구성했습니다. 이후 단계(파일 저장)의 모듈 자리(`app/storage`)를 미리 잡아두었고, 헬스체크 엔드포인트와 테스트가 동작합니다.
+6단계(파일 저장)를 구현하려고 실제 `.adofai` 포맷을 조사하다가, ADOFAI의 근본
+메커니즘을 하나 발견했습니다: **타일의 회전각이 곧 그 타일까지 걸리는 시간(박자)을
+결정합니다** (직전 타일 대비 상대 회전각 180도 = 1박, 90도 = 반박, 60도 = 1/3박
+— 공식 위키 및 커뮤니티 도구(adofaipy, ADOFAI-Map-Converter, adofai-angle-calculator)
+역공학 결과로 교차 확인). 즉 "언제 타일을 놓을지"와 "얼마나 꺾을지"는 독립적으로
+정할 수 없습니다.
+
+3~4단계는 이 사실을 모른 채 "타이밍은 비트 검출 결과로 고정, 회전각은 난이도에
+따라 자유롭게 선택"하는 구조로 만들어져 있었습니다. 이대로 `.adofai` 파일을
+만들면 **파일은 정상적으로 열리지만 실제 재생 시 타일이 음악의 박자와 어긋나게
+됩니다** — "박자 정확도"가 요구사항 1순위였으므로 이는 방치할 수 없는 오류였습니다.
+
+그래서 6단계 작업의 일부로 3단계 맵 생성 엔진을 이 메커니즘에 맞게 다시 짰습니다:
+
+- **이전**: `difficulty.py`가 회전각 후보 목록(예: 15°~180°)과 "세분 확률"을 따로
+  가짐 → 회전각과 타이밍이 각자 독립적으로 결정됨(오류).
+- **이후**: 난이도는 "한 박을 몇 개의 동일한 타일로 나눌지(split)"에 대한 확률
+  분포로 표현합니다(`beat_split_weights`, 예: `{1: 0.7, 2: 0.3}`). split이 정해지면
+  회전각 크기는 `180 * (1 - 1/split)`로 자동 결정되고(예: split=2 → 90도 = 정확히
+  반박), 방향(좌/우)만 별도로 선택합니다. 이렇게 하면 타이밍과 회전각이 항상
+  일관됩니다.
+- 방향(부호)이 "직전과 반대"로 바뀌는 타일은 실제 게임에서 지속 시간이 달라지므로
+  (오른쪽으로 90도 꺾으면 반박이 아니라 1.5박이 됨), 파일 저장 시 **Twirl 액션**을
+  넣어 방향과 무관하게 원래 의도한 박자 길이가 유지되도록 보정합니다
+  (`app/storage/adofai_writer.py`).
+- 오디오 분석의 템포 변화 감지 결과(`tempo_changes`)를 살려 구간별 BPM 그리드를
+  만들고, 실제 BPM이 바뀌는 지점에는 `SetSpeed` 액션을 넣습니다.
+
+이 수정이 올바른지는 "왕복 테스트"로 검증했습니다: 맵을 생성 → `.adofai` 문서로
+저장 → 저장된 각도/액션만으로 실제 게임과 동일한 공식으로 타이밍을 역산 →
+원래 의도한 타일 시각과 비교. 난이도 4종 × BPM 3종 × 시드 50개(총 65,539개
+타일 전이)에 대해 최대 오차가 `3.5e-15초`(부동소수점 오차 수준)로, 구조적인
+어긋남이 없음을 확인했습니다. 자세한 내용은 아래 6단계 절과
+`tests/test_storage_adofai.py`를 참고하세요.
+
+이 과정에서 3~4단계의 테스트와 `app/ai/edit_engine.py`(자연어 편집이 조정하는
+파라미터)도 새 구조에 맞게 함께 업데이트했습니다. 공개 API 계약(`generate_map`,
+`regenerate_segment`, `/mapgen/*`, `/ai/edit-segment` 응답 형식)은 그대로이므로
+5단계 GUI는 변경 없이 계속 동작합니다.
+
+## 현재 상태 (6단계까지 완료)
+
+`backend/` 아래에 FastAPI 프로젝트 골격을 구성했습니다. 헬스체크 엔드포인트와 테스트가 동작합니다.
 
 `app/audio`에 librosa 기반 오디오 분석 파이프라인을 구현했습니다.
 
@@ -55,13 +97,13 @@
 
 **주의(mp3 지원)**: mp3 디코딩은 `audioread`가 시스템에 설치된 **ffmpeg**(또는 gstreamer)를 통해 처리합니다. 이 개발 컨테이너에는 ffmpeg가 없어 mp3 디코딩을 직접 검증하지 못했고, wav로만 실동작을 확인했습니다. wav/ogg는 `soundfile`(libsndfile)로 바로 디코딩되어 문제없습니다. 로컬 실행 시 mp3를 쓰려면 ffmpeg를 PATH에 설치해야 하며, 8단계(exe 패키징)에서는 ffmpeg 바이너리를 함께 번들링해야 합니다.
 
-`app/mapgen`에 오디오 분석 결과를 ADOFAI 타일 시퀀스로 바꾸는 맵 생성 엔진을 구현했습니다.
+`app/mapgen`에 오디오 분석 결과를 ADOFAI 타일 시퀀스로 바꾸는 맵 생성 엔진을 구현했습니다. (아래 구조는 6단계에서 "회전각=박자" 메커니즘에 맞게 보정한 최종 버전입니다.)
 
-- 데이터 모델: `app/mapgen/models.py` — `Difficulty`(쉬움/보통/어려움/극악), `Tile`(직전 방향 대비 상대 회전각), `GeneratedMap`
-- 난이도 프로파일: `app/mapgen/difficulty.py` — 난이도별 허용 회전각, 직진 확률, 세분(subdivision) 확률, 반복 허용 횟수, 드롭 강조 가중치
-- 타임라인 구성: `app/mapgen/schedule.py` — 비트를 기본 그리드로 삼고 드롭 구간 근처는 세분 타일 확률을 높여 밀도를 올림
-- 회전 패턴 생성: `app/mapgen/pattern.py` — 에너지가 높을수록 회전 선호, 드롭 구간엔 큰 각도 선호(화려함), 직전과 반대 방향으로 꺾는 경향(자연스러운 흐름), 동일 회전 연속 제한(반복 최소화)
-- 엔진: `app/mapgen/engine.py` — `generate_map()`(전체 생성), `regenerate_segment()`(박자 타이밍은 유지한 채 지정 구간의 회전 패턴만 재생성 — 4단계 AI 편집이 호출할 기반)
+- 데이터 모델: `app/mapgen/models.py` — `Difficulty`(쉬움/보통/어려움/극악), `Tile`(직전 방향 대비 상대 회전각 + split_n/bpm 메타데이터), `GeneratedMap`
+- 난이도 프로파일: `app/mapgen/difficulty.py` — 난이도별 "한 박을 몇 등분할지" 확률 분포(`beat_split_weights`), 반복 허용 횟수, 드롭/에너지에 따른 분할 가중치, 지그재그 확률(`flip_probability`)
+- 타임라인 구성: `app/mapgen/schedule.py` — 구간별 BPM 그리드 위에서 매 박마다 분할 수를 선택해 타일을 배치. 드롭/높은 에너지 구간은 더 잘게 나뉠 확률을 높여 밀도를 올리고, 템포 변화 감지 결과(`tempo_changes`)에 따라 구간별로 다른 BPM 그리드를 적용
+- 회전 패턴 생성: `app/mapgen/pattern.py` — 회전 크기는 분할 수로 이미 정해지므로 방향(좌/우)만 선택. 직전과 반대 방향으로 꺾는 경향(자연스러운 흐름), 동일 (분할, 방향) 조합의 연속 반복 제한(반복 최소화)
+- 엔진: `app/mapgen/engine.py` — `generate_map()`(전체 생성), `regenerate_segment()`(박자 타이밍과 분할은 유지한 채 지정 구간의 회전 "방향"만 재생성 — 4단계 AI 편집이 호출할 기반)
 - API: `POST /mapgen/generate` (음악 파일 + 난이도 → 맵 JSON), `POST /mapgen/regenerate-segment` (기존 맵 + 구간 → 해당 구간만 재생성된 맵)
 
 시드(seed)를 지정하면 동일한 입력에 대해 항상 동일한 패턴이 생성됩니다(재현 가능성 확보, 테스트에도 활용).
@@ -72,22 +114,30 @@
 - Gemini 클라이언트: `app/ai/gemini_client.py` — `GEMINI_API_KEY` 설정 시 `google-generativeai`로 호출, 테스트를 위한 함수 주입(`generate_fn`) 지원
 - 규칙 기반 폴백: `app/ai/rule_based_parser.py` — 정규식/키워드로 "20~35초를 더 어렵게", "드롭 부분을 화려하게", "후반부를 쉽게", "반복을 줄여", "박자를 더 정확하게 맞춰" 같은 대표 패턴을 처리 (API 키가 없어도 항상 동작)
 - 통합 파서: `app/ai/instruction_parser.py` — Gemini가 설정돼 있으면 우선 시도하고, 키가 없거나 호출/응답 파싱이 실패하면 규칙 기반으로 자동 대체
-- 편집 적용: `app/ai/edit_engine.py` — `EditInstruction`을 난이도 프로파일 조정(난이도 이동, 드롭 강조 가중치, 반복 허용 횟수, 세분 확률)으로 변환해 `mapgen.regenerate_segment()`에 적용
+- 편집 적용: `app/ai/edit_engine.py` — `EditInstruction`을 난이도 프로파일 조정(난이도 이동, 반복 허용 횟수, 지그재그 확률)으로 변환해 `mapgen.regenerate_segment()`에 적용. 구간 재생성은 회전 "방향"만 바꾸므로(박자 정확도 보존), 편집 지시도 방향 선택에 실제로 영향을 주는 파라미터만 조정한다
 - API: `POST /ai/edit-segment` (기존 맵 + 자연어 지시 → 해당 구간만 반영된 새 맵 + 파싱 결과)
 
 이 개발 컨테이너에는 `GEMINI_API_KEY`가 없어 실제 Gemini 호출은 검증하지 못했고, 규칙 기반 폴백 경로로 전체 기능을 테스트했습니다. Gemini 키를 `.env`에 넣으면 자동으로 AI 경로가 우선 사용됩니다.
 
+`app/storage`에 `GeneratedMap`을 실제 ADOFAI 커스텀 레벨(`.adofai`, JSON) 포맷으로 저장/불러오는 모듈을 구현했습니다.
+
+- 저장: `app/storage/adofai_writer.py` — 타일의 상대 회전각을 누적해 `angleData`(절대 각도)를 만들고, 방향이 바뀌는 타일마다 **Twirl** 액션을 넣어 실제 재생 시간이 방향과 무관하게 원래 의도한 박자를 유지하도록 보정한다. 구간별 BPM이 바뀌는 지점에는 `SetSpeed` 액션을 넣는다
+- 불러오기: `app/storage/adofai_reader.py` — `angleData`+`actions`(SetSpeed, Twirl)로부터 각 타일의 실제 시각을 역산해 `GeneratedMap`으로 되돌린다. 저장 시 사용한 것과 정확히 대응하는 공식으로 구현해, 이 왕복 변환이 정확히 일치하는지가 곧 위 "회전각→박자" 공식이 맞는지를 검증하는 테스트가 된다
+- API: `POST /storage/export` (기존 맵 + 곡 파일명/아티스트 등 메타데이터 → `.adofai` 파일 다운로드), `POST /storage/import` (`.adofai` 파일 업로드 → 맵 JSON, 이어서 편집 가능)
+
+**주의(Twirl 액션의 정확한 JSON 스펙)**: Twirl 액션의 정확한 필드 구성은 공식 문서가 아니라 커뮤니티 도구(ADOFAI-Map-Converter, adofai-angle-calculator)의 역공학 결과를 참고해 `{"floor": N, "eventType": "Twirl"}` 형태로 구현했습니다. 실제 게임/에디터에서 열었을 때 회전 "방향"이 의도와 다르게 보인다면 이 부분을 우선 의심해야 합니다 — **타이밍(박자) 자체는 Twirl 필드명과 무관하게 위에서 설명한 회전각→박자 공식으로 이미 왕복 테스트(65,539개 타일 전이, 최대 오차 3.5e-15초)로 검증되어 있습니다.** 즉 최악의 경우도 "일부 타일이 반대 방향으로 꺾여 보이는" 시각적 문제이지, 음악과 어긋나는 문제는 아닙니다.
+
 `frontend/`에 Flutter 데스크톱(Linux/Windows) 앱을 구현했습니다. 백엔드 API를 그대로 호출하는 얇은 클라이언트로, 별도의 상태 서버 없이 동작합니다.
 
 - 데이터 모델: `lib/models/generated_map.dart` — 백엔드 Pydantic 모델과 1:1 대응하는 `Tile`/`GeneratedMap`/`EditInstruction`
-- API 클라이언트: `lib/services/api_client.dart` — `POST /mapgen/generate`(멀티파트 업로드), `POST /ai/edit-segment` 호출
-- 화면: `lib/screens/home_screen.dart` — 음악 파일 선택(mp3/ogg/wav), 난이도 선택, 시드 입력, 생성 버튼, 진행 상태 표시, 저장 버튼, 자연어 구간 재생성 입력창을 한 화면에 배치
+- API 클라이언트: `lib/services/api_client.dart` — `POST /mapgen/generate`(멀티파트 업로드), `POST /ai/edit-segment`, `POST /storage/export`(.adofai 다운로드), `POST /storage/import`(.adofai 업로드) 호출
+- 화면: `lib/screens/home_screen.dart` — 음악 파일 선택(mp3/ogg/wav), `.adofai` 불러오기, 난이도 선택, 시드 입력, 생성 버튼, 진행 상태 표시, 곡 제목/아티스트 입력 후 저장, 자연어 구간 재생성 입력창을 한 화면에 배치
 - 미리보기: `lib/widgets/map_preview.dart` — 각 타일의 상대 회전각을 누적해 진행 방향을 구하고 선분을 이어 그리는 `CustomPainter`. 다운비트/드롭 구간은 색을 달리해 강조하며, 확대/축소·이동이 가능하다(`InteractiveViewer`)
 - 난이도 선택: `lib/widgets/difficulty_selector.dart` — 쉬움/보통/어려움/극악 세그먼트 버튼
 
 **진행률 표시**: 백엔드가 작업 진행률(%)을 스트리밍하지 않으므로(동기 HTTP 응답), 현재는 부정확한(indeterminate) 진행 표시줄 + 상태 문구로 처리합니다. 정확한 퍼센트 진행률을 원하면 추후 SSE/WebSocket 기반 진행상황 API가 필요합니다.
 
-**저장 버튼**: 현재는 맵 생성 엔진의 내부 표현(JSON)을 그대로 파일로 저장합니다. 실제 ADOFAI가 읽을 수 있는 `.adofai` 포맷 변환은 6단계에서 백엔드에 구현한 뒤 GUI에서 그 결과를 저장하도록 연결할 예정입니다.
+**저장/불러오기**: 6단계에서 실제 `.adofai` 변환이 구현되어, "저장" 버튼은 이제 진짜 ADOFAI가 읽을 수 있는 `.adofai` 파일을 저장합니다(곡 제목/아티스트 입력 가능). "불러오기(.adofai)" 버튼으로 이전에 저장한 파일을 다시 불러와 이어서 편집(구간 재생성)할 수도 있습니다.
 
 이 컨테이너에는 GUI가 없어 실제 화면을 볼 수 없지만, Flutter SDK(3.44.7)를 설치하고 GTK3 개발 패키지를 추가해 **Linux 데스크톱 빌드를 실제로 컴파일·실행**해 검증했습니다: `flutter analyze`(경고 없음), `flutter test`(위젯 테스트 2개 통과), `flutter build linux --release` 성공, Xvfb 가상 디스플레이에서 앱을 직접 실행해 화면 렌더링과 입력 유효성 검사(파일 미선택 시 안내 스낵바)까지 스크린샷으로 확인했습니다. Windows용 `.exe`는 8단계에서 실제 Windows 환경(또는 CI의 windows 러너)으로 빌드해야 합니다 — Flutter는 Windows 데스크톱 앱을 크로스 컴파일할 수 없습니다.
 
@@ -137,11 +187,11 @@ backend/
   app/
     main.py            # FastAPI 앱 진입점
     core/config.py     # 환경설정 (Pydantic Settings)
-    api/routes/         # API 라우터 (health, audio, mapgen, ai_edit)
+    api/routes/         # API 라우터 (health, audio, mapgen, ai_edit, storage)
     audio/               # 오디오 분석 모듈 (BPM/비트/다운비트/에너지/템포변화/드롭)
-    mapgen/              # 맵 생성 엔진 (난이도별 회전 패턴, 구간 재생성)
+    mapgen/              # 맵 생성 엔진 (난이도별 분할/회전 패턴, 구간 재생성)
     ai/                  # AI 연동 (Gemini 무료 티어 + 규칙 기반 폴백, 자연어 구간 편집)
-    storage/             # (6단계) ADOFAI 레벨 파일 저장/불러오기
+    storage/             # ADOFAI 레벨 파일 저장/불러오기 (adofai_writer, adofai_reader)
     models/              # 공용 데이터 모델 (Pydantic)
   tests/                # pytest 테스트
   requirements.txt

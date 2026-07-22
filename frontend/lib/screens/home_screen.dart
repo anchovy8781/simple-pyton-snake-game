@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io' as io;
 
 import 'package:file_selector/file_selector.dart';
@@ -14,9 +13,9 @@ const _audioTypeGroup = XTypeGroup(
   extensions: ['mp3', 'ogg', 'wav'],
 );
 
-const _jsonTypeGroup = XTypeGroup(
-  label: 'JSON',
-  extensions: ['json'],
+const _adofaiTypeGroup = XTypeGroup(
+  label: 'ADOFAI 레벨',
+  extensions: ['adofai'],
 );
 
 class HomeScreen extends StatefulWidget {
@@ -31,12 +30,15 @@ class _HomeScreenState extends State<HomeScreen> {
       TextEditingController(text: 'http://127.0.0.1:8000');
   final TextEditingController _seedController = TextEditingController();
   final TextEditingController _instructionController = TextEditingController();
+  final TextEditingController _songNameController = TextEditingController();
+  final TextEditingController _artistController = TextEditingController();
 
   XFile? _selectedAudioFile;
   Difficulty _selectedDifficulty = Difficulty.normal;
 
   bool _isGenerating = false;
   bool _isEditing = false;
+  bool _isLoadingFile = false;
   String? _statusMessage;
 
   GeneratedMap? _generatedMap;
@@ -47,6 +49,8 @@ class _HomeScreenState extends State<HomeScreen> {
     _backendUrlController.dispose();
     _seedController.dispose();
     _instructionController.dispose();
+    _songNameController.dispose();
+    _artistController.dispose();
     super.dispose();
   }
 
@@ -153,17 +157,64 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
+    final suggestedName = _songNameController.text.trim().isNotEmpty
+        ? _songNameController.text.trim()
+        : 'level';
     final location = await getSaveLocation(
-      suggestedName: 'adofai_map.json',
-      acceptedTypeGroups: const [_jsonTypeGroup],
+      suggestedName: '$suggestedName.adofai',
+      acceptedTypeGroups: const [_adofaiTypeGroup],
     );
     if (location == null) return;
 
-    // 실제 .adofai 파일 포맷 변환은 6단계(파일 저장)에서 구현한다.
-    // 지금은 맵 생성/편집 엔진의 내부 표현(JSON)을 그대로 저장한다.
-    final content = const JsonEncoder.withIndent('  ').convert(map.toJson());
-    await io.File(location.path).writeAsString(content);
-    _showMessage('저장했습니다: ${location.path}');
+    final client = _buildClient();
+    try {
+      final songFilename = _selectedAudioFile?.name ?? 'song.mp3';
+      final bytes = await client.exportAdofai(
+        existingMap: map,
+        songFilename: songFilename,
+        songName: _songNameController.text.trim(),
+        artist: _artistController.text.trim(),
+        outputFilename: suggestedName,
+      );
+      await io.File(location.path).writeAsBytes(bytes);
+      _showMessage('저장했습니다: ${location.path}');
+    } on ApiException catch (e) {
+      _showMessage(e.message);
+    } catch (e) {
+      _showMessage('알 수 없는 오류: $e');
+    } finally {
+      client.dispose();
+    }
+  }
+
+  Future<void> _loadMap() async {
+    final file = await openFile(acceptedTypeGroups: const [_adofaiTypeGroup]);
+    if (file == null) return;
+
+    setState(() {
+      _isLoadingFile = true;
+      _statusMessage = '.adofai 파일을 불러오는 중입니다...';
+    });
+
+    final client = _buildClient();
+    try {
+      final bytes = await file.readAsBytes();
+      final map = await client.importAdofai(fileBytes: bytes, fileName: file.name);
+      setState(() {
+        _generatedMap = map;
+        _lastParsedInstruction = null;
+        _statusMessage = '불러오기 완료: 타일 ${map.tiles.length}개';
+      });
+    } on ApiException catch (e) {
+      _showMessage(e.message);
+      setState(() => _statusMessage = null);
+    } catch (e) {
+      _showMessage('알 수 없는 오류: $e');
+      setState(() => _statusMessage = null);
+    } finally {
+      client.dispose();
+      if (mounted) setState(() => _isLoadingFile = false);
+    }
   }
 
   void _showMessage(String message) {
@@ -174,7 +225,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final map = _generatedMap;
-    final busy = _isGenerating || _isEditing;
+    final busy = _isGenerating || _isEditing || _isLoadingFile;
 
     return Scaffold(
       appBar: AppBar(title: const Text('ADOFAI Map Generator')),
@@ -191,10 +242,22 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: busy ? null : _pickAudioFile,
-              icon: const Icon(Icons.audiotrack),
-              label: Text(_selectedAudioFile?.name ?? '음악 파일 선택 (mp3/ogg/wav)'),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: busy ? null : _pickAudioFile,
+                    icon: const Icon(Icons.audiotrack),
+                    label: Text(_selectedAudioFile?.name ?? '음악 파일 선택 (mp3/ogg/wav)'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  onPressed: busy ? null : _loadMap,
+                  icon: const Icon(Icons.folder_open),
+                  label: const Text('불러오기(.adofai)'),
+                ),
+              ],
             ),
             const SizedBox(height: 12),
             DifficultySelector(
@@ -237,6 +300,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 map: map,
                 busy: busy,
                 instructionController: _instructionController,
+                songNameController: _songNameController,
+                artistController: _artistController,
                 lastParsedInstruction: _lastParsedInstruction,
                 onSave: _saveMap,
                 onEditSegment: _editSegment,
@@ -258,6 +323,8 @@ class _GeneratedMapPanel extends StatelessWidget {
   final GeneratedMap map;
   final bool busy;
   final TextEditingController instructionController;
+  final TextEditingController songNameController;
+  final TextEditingController artistController;
   final EditInstruction? lastParsedInstruction;
   final VoidCallback onSave;
   final VoidCallback onEditSegment;
@@ -266,6 +333,8 @@ class _GeneratedMapPanel extends StatelessWidget {
     required this.map,
     required this.busy,
     required this.instructionController,
+    required this.songNameController,
+    required this.artistController,
     required this.lastParsedInstruction,
     required this.onSave,
     required this.onEditSegment,
@@ -290,10 +359,28 @@ class _GeneratedMapPanel extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: songNameController,
+                decoration: const InputDecoration(labelText: '곡 제목(선택)', border: OutlineInputBorder()),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: TextField(
+                controller: artistController,
+                decoration: const InputDecoration(labelText: '아티스트(선택)', border: OutlineInputBorder()),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
         OutlinedButton.icon(
           onPressed: busy ? null : onSave,
           icon: const Icon(Icons.save_alt),
-          label: const Text('저장 (JSON)'),
+          label: const Text('저장 (.adofai)'),
         ),
         const SizedBox(height: 16),
         Text('구간 재생성 (자연어 지시)', style: Theme.of(context).textTheme.titleSmall),
