@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# 환경 변수
+.env
+
+# 업로드/생성 데이터
+backend/data/
+
+# Flutter / Dart
+frontend/.dart_tool/
+frontend/.flutter-plugins
+frontend/.flutter-plugins-dependencies
+frontend/build/
+frontend/**/ephemeral/
+
+# 배포 산출물
+dist/
+build/
+*.exe
+
+# OS / 에디터
+.DS_Store
+.vscode/
+.idea/

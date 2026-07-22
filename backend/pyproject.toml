@@ -1,0 +1,13 @@
+[project]
+name = "adofai-map-generator"
+version = "0.1.0"
+description = "Generate A Dance of Fire and Ice (ADOFAI) custom maps from music files"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
