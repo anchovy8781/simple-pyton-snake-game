@@ -208,17 +208,37 @@ ShakeScreen, Twirl`가 전부입니다). `settings`에도 플래닛 개수 필�
 - 전체 파이프라인: `app/audio/analyzer.py` (`analyze_audio`)
 - API: `POST /audio/analyze` (mp3/ogg/wav 파일 업로드 → 분석 결과 JSON)
 
-**해결됨(mp3 지원, "오디오 파일을 불러오는 중 오류가 발생했습니다" 버그)**: mp3
-디코딩은 우선 `soundfile`(libsndfile)이 시도하고, 그게 실패하면 `librosa`가
-내부적으로 `audioread`로 넘어갑니다. `audioread`는 PATH에서 정확히
-"ffmpeg"(Windows는 "ffmpeg.exe")라는 이름의 실행 파일을 찾는데, ffmpeg를
-따로 설치하지 않은 PC(특히 exe 패키징 후 배포한 경우)에서는 이게 없어
-`NoBackendError`로 오디오 로딩 전체가 실패했습니다. `app/audio/ffmpeg_setup.py`
-가 앱 시작 시 `imageio-ffmpeg`(pip으로 함께 설치되는 정적 ffmpeg 바이너리)를
-"ffmpeg"라는 이름으로 복사해 PATH 맨 앞에 등록해두므로, 이제 시스템에
-ffmpeg가 없어도 mp3가 정상적으로 디코딩됩니다. 이 바이너리는
-`packaging/adofai_backend.spec`에서 exe에도 함께 번들링되도록 설정했습니다
+**해결됨(mp3 지원, "오디오 파일을 불러오는 중 오류가 발생했습니다(422)" 버그)**:
+mp3 디코딩은 우선 `soundfile`(libsndfile)이 시도하고, 그게 실패하면
+`librosa`가 내부적으로 `audioread`로 넘어갑니다. `audioread`는 PATH에서
+정확히 "ffmpeg"(Windows는 "ffmpeg.exe")라는 이름의 실행 파일을 찾는데,
+ffmpeg를 따로 설치하지 않은 PC(특히 exe 패키징 후 배포한 경우)에서는 이게
+없어 `NoBackendError`로 오디오 로딩 전체가 실패했습니다.
+`app/audio/ffmpeg_setup.py`가 앱 시작 시 `imageio-ffmpeg`(pip으로 함께
+설치되는 정적 ffmpeg 바이너리)를 "ffmpeg"라는 이름으로 PATH에 등록합니다.
+
+1차 수정에서는 이 등록을 런타임에 `imageio_ffmpeg`를 다시 임포트해
+처리했는데, exe로 패키징해 실제로 테스트해보니 여전히 422가 재현됐습니다 —
+`imageio_ffmpeg`가 자기 패키지의 `__file__` 기준 상대 경로로 내부 바이너리를
+찾는 방식이 PyInstaller로 얼리면 깨지는 잘 알려진 함정이었습니다. 그래서
+런타임 경로 해석에 의존하는 대신, **빌드 시점**(`packaging/adofai_backend.spec`,
+일반 Python 환경에서 실행됨)에 "ffmpeg"라는 이름으로 미리 복사해 실행 파일과
+같은 폴더에 놓아두도록 바꿨습니다 — 런타임에는 그 폴더에 파일이 있는지만
+확인하면 되므로 훨씬 안정적입니다(`app/audio/ffmpeg_setup.py`의
+`getattr(sys, "frozen", False)` 분기). 개발 환경(얼려지지 않은 경우)에는
+기존처럼 `imageio_ffmpeg`를 런타임에 임포트해 복사합니다
 (`test_load_audio_reads_valid_mp3`, `test_ensure_ffmpeg_on_path_puts_a_real_ffmpeg_binary_on_path`로 검증).
+
+**해결됨("요청이 실패했습니다(500)" 버그)**: `librosa`의 템포 추정이 드물게
+(조용하거나 특이한 오디오에서) `bpm=0`을 반환할 수 있는데, 이 값이 그대로
+`analysis.bpm`으로 흘러가면 맵 생성 단계(`app/mapgen/schedule.py`)의
+`60.0 / bpm` 계산이 `ZeroDivisionError`로 죽고, `/mapgen/generate`가 이를
+잡지 않아 내용 없는 빈 500을 그대로 사용자에게 보여줬습니다. 재현 테스트로
+직접 확인한 뒤 두 가지로 고쳤습니다: (1) `app/audio/beats.py`에서 bpm이
+0이거나 유한하지 않으면 안전한 기본값(120)으로 대체, (2) `/mapgen/generate`가
+맵 생성 단계 전체를 감싸 어떤 이유로든 실패하면 최소한 원인이 담긴 500을
+돌려주도록 방어 코드 추가(`test_detect_tempo_and_beats_falls_back_when_librosa_returns_zero_bpm`,
+`test_generate_endpoint_reports_unexpected_map_generation_errors_with_detail`로 검증).
 
 `app/mapgen`에 오디오 분석 결과를 ADOFAI 타일 시퀀스로 바꾸는 맵 생성 엔진을 구현했습니다. (아래 구조는 6단계에서 "회전각=박자" 메커니즘에 맞게 보정한 최종 버전입니다.)
 

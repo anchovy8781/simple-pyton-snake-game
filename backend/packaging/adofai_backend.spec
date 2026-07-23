@@ -15,6 +15,9 @@
 """
 
 import os
+import shutil
+import sys
+import tempfile
 
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
@@ -28,14 +31,27 @@ hidden_imports = (
     + collect_submodules("soundfile")
     + collect_submodules("uvicorn")
 )
-# imageio_ffmpeg의 정적 ffmpeg 바이너리(app/audio/ffmpeg_setup.py가 PATH에 등록해
-# mp3 디코딩에 사용)도 데이터로 포함해야 exe만으로 ffmpeg 없이 동작한다.
-datas = collect_data_files("librosa") + collect_data_files("imageio_ffmpeg")
+datas = collect_data_files("librosa")
+
+# ffmpeg 바이너리는 app/audio/ffmpeg_setup.py가 PATH에 등록해 mp3 디코딩에
+# 쓴다. imageio_ffmpeg는 자기 패키지의 __file__ 기준 상대 경로로 바이너리를
+# 찾는데, 이런 방식은 PyInstaller로 얼리면 깨지기 쉬운 잘 알려진 함정이다.
+# 그래서 런타임에 그 경로 해석에 의존하는 대신, 지금(일반 Python 환경에서
+# 실행되는 이 spec 파일 안)에 미리 "ffmpeg"라는 이름으로 복사해두고,
+# 실행 파일(adofai_backend.exe)과 같은 폴더에 그대로 놓는다.
+import imageio_ffmpeg  # noqa: E402
+
+_ffmpeg_name = "ffmpeg.exe" if sys.platform.startswith("win") else "ffmpeg"
+_ffmpeg_stage_dir = os.path.join(tempfile.gettempdir(), "adofai_pyinstaller_ffmpeg")
+os.makedirs(_ffmpeg_stage_dir, exist_ok=True)
+_ffmpeg_staged_path = os.path.join(_ffmpeg_stage_dir, _ffmpeg_name)
+shutil.copy2(imageio_ffmpeg.get_ffmpeg_exe(), _ffmpeg_staged_path)
+binaries = [(_ffmpeg_staged_path, ".")]
 
 a = Analysis(
     [os.path.join(SPEC_DIR, "run_backend.py")],
     pathex=[BACKEND_DIR],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hidden_imports,
     hookspath=[],

@@ -57,7 +57,13 @@ async def generate_map_from_audio(
         enable_slow=enable_slow,
         enable_sync_hits=enable_sync_hits,
     )
-    return generate_map(analysis, difficulty, seed=seed, style=style)
+    try:
+        return generate_map(analysis, difficulty, seed=seed, style=style)
+    except Exception as exc:
+        # analyze_audio()는 위에서 이미 개별적으로 처리했으므로, 여기서 잡히는
+        # 것은 맵 생성 로직 자체의 예상치 못한 오류다. 원인이 무엇이든 사용자가
+        # 빈 500만 보는 대신 실제 오류 내용을 볼 수 있게 한다.
+        raise HTTPException(status_code=500, detail=f"맵 생성 중 오류가 발생했습니다: {exc}") from exc
 
 
 class RegenerateSegmentRequest(BaseModel):

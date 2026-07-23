@@ -42,6 +42,26 @@ def test_generate_endpoint_rejects_unsupported_extension() -> None:
     assert response.status_code == 400
 
 
+def test_generate_endpoint_reports_unexpected_map_generation_errors_with_detail(monkeypatch) -> None:
+    """generate_map()이 예상치 못한 이유로 죽어도(예: 오디오 분석 결과가 비정상적인
+    경우) 빈 500이 아니라 원인이 담긴 500을 돌려줘야 한다."""
+    import app.api.routes.mapgen as mapgen_route
+
+    def _boom(*args, **kwargs):
+        raise ZeroDivisionError("boom")
+
+    monkeypatch.setattr(mapgen_route, "generate_map", _boom)
+
+    response = client.post(
+        "/mapgen/generate",
+        files={"file": ("song.wav", _make_wav_bytes(), "audio/wav")},
+        data={"difficulty": "13"},
+    )
+
+    assert response.status_code == 500
+    assert "boom" in response.json()["detail"]
+
+
 def test_regenerate_segment_endpoint_updates_existing_map() -> None:
     generate_response = client.post(
         "/mapgen/generate",
