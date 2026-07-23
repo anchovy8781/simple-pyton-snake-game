@@ -8,7 +8,8 @@ pydantic-settings==2.7.1
 librosa==0.10.2.post1
 numpy==1.26.4
 soundfile==0.12.1
-audioread==3.1.0  # mp3 디코딩 백엔드 (ffmpeg/gstreamer 설치가 필요할 수 있음)
+audioread==3.1.0  # mp3 디코딩 백엔드 (soundfile 실패 시 ffmpeg/avconv가 필요)
+imageio-ffmpeg==0.5.1  # 시스템에 ffmpeg가 없어도 되도록 정적 바이너리를 함께 배포 (app/audio/ffmpeg_setup.py)
 
 # 4단계: AI 연동 (무료 티어인 Google Gemini API 사용, 키 없으면 규칙 기반 파서로 대체)
 google-generativeai==0.8.6

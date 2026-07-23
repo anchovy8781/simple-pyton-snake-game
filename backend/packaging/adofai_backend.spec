@@ -28,7 +28,9 @@ hidden_imports = (
     + collect_submodules("soundfile")
     + collect_submodules("uvicorn")
 )
-datas = collect_data_files("librosa")
+# imageio_ffmpeg의 정적 ffmpeg 바이너리(app/audio/ffmpeg_setup.py가 PATH에 등록해
+# mp3 디코딩에 사용)도 데이터로 포함해야 exe만으로 ffmpeg 없이 동작한다.
+datas = collect_data_files("librosa") + collect_data_files("imageio_ffmpeg")
 
 a = Analysis(
     [os.path.join(SPEC_DIR, "run_backend.py")],

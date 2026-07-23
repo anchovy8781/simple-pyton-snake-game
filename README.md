@@ -208,7 +208,17 @@ ShakeScreen, Twirl`가 전부입니다). `settings`에도 플래닛 개수 필�
 - 전체 파이프라인: `app/audio/analyzer.py` (`analyze_audio`)
 - API: `POST /audio/analyze` (mp3/ogg/wav 파일 업로드 → 분석 결과 JSON)
 
-**주의(mp3 지원)**: mp3 디코딩은 `audioread`가 시스템에 설치된 **ffmpeg**(또는 gstreamer)를 통해 처리합니다. 이 개발 컨테이너에는 ffmpeg가 없어 mp3 디코딩을 직접 검증하지 못했고, wav로만 실동작을 확인했습니다. wav/ogg는 `soundfile`(libsndfile)로 바로 디코딩되어 문제없습니다. 로컬 실행 시 mp3를 쓰려면 ffmpeg를 PATH에 설치해야 하며, 8단계(exe 패키징)에서는 ffmpeg 바이너리를 함께 번들링해야 합니다.
+**해결됨(mp3 지원, "오디오 파일을 불러오는 중 오류가 발생했습니다" 버그)**: mp3
+디코딩은 우선 `soundfile`(libsndfile)이 시도하고, 그게 실패하면 `librosa`가
+내부적으로 `audioread`로 넘어갑니다. `audioread`는 PATH에서 정확히
+"ffmpeg"(Windows는 "ffmpeg.exe")라는 이름의 실행 파일을 찾는데, ffmpeg를
+따로 설치하지 않은 PC(특히 exe 패키징 후 배포한 경우)에서는 이게 없어
+`NoBackendError`로 오디오 로딩 전체가 실패했습니다. `app/audio/ffmpeg_setup.py`
+가 앱 시작 시 `imageio-ffmpeg`(pip으로 함께 설치되는 정적 ffmpeg 바이너리)를
+"ffmpeg"라는 이름으로 복사해 PATH 맨 앞에 등록해두므로, 이제 시스템에
+ffmpeg가 없어도 mp3가 정상적으로 디코딩됩니다. 이 바이너리는
+`packaging/adofai_backend.spec`에서 exe에도 함께 번들링되도록 설정했습니다
+(`test_load_audio_reads_valid_mp3`, `test_ensure_ffmpeg_on_path_puts_a_real_ffmpeg_binary_on_path`로 검증).
 
 `app/mapgen`에 오디오 분석 결과를 ADOFAI 타일 시퀀스로 바꾸는 맵 생성 엔진을 구현했습니다. (아래 구조는 6단계에서 "회전각=박자" 메커니즘에 맞게 보정한 최종 버전입니다.)
 
