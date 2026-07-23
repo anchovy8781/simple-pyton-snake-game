@@ -63,7 +63,7 @@ class ApiClient {
       body: jsonEncode({
         'existing_map': existingMap.toJson(),
         'instruction': instruction,
-        if (seed != null) 'seed': seed,
+        'seed': ?seed,
       }),
     );
 
