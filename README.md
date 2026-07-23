@@ -43,7 +43,7 @@
 - [x] 6단계 — 파일 저장 (ADOFAI `.adofai` 커스텀 레벨 포맷 저장/불러오기)
 - [x] 7단계 — 난이도 1~26 세분화 + 패턴 스타일 옵션(마법진/질주맵/슬로우) + 테스트 보강
 - [x] 8단계 — 배포용 실행 파일(.exe) 패키징 (백엔드: PyInstaller, GUI: Flutter Windows build, GUI 시작 시 백엔드 자동 실행)
-- [ ] 9단계 — 동시타격(동타) 자동 배치 + 배경 애니메이션 생성 (ADOFAI 포맷 추가 조사 필요)
+- [x] 9단계 — 동시타격(동타) 자동 배치 (배경 애니메이션은 보류)
 
 ## ⚠️ 6단계에서 발견하고 수정한 핵심 오류 (박자 정확도)
 
@@ -172,7 +172,29 @@ AI 편집 프롬프트(`app/ai/instruction_parser.py`)도 손봤습니다: 음�
   서브폴더)은 워크플로우와 `backend_launcher.dart`가 같은 값을 공유하므로,
   둘 중 하나를 바꾸면 다른 쪽도 함께 바꿔야 합니다.
 
-## 현재 상태 (8단계까지 완료)
+## 9단계: 동시타격(동타) 자동 배치
+
+동타를 실제 `.adofai` 포맷으로 어떻게 구현할지 조사한 결과: 커뮤니티가
+프로그램적으로 `.adofai`를 생성할 때 쓰는, 버전이 명시된(v1.11.3 r70)
+검증된 이벤트 목록에는 `AddPlanet`/`RemovePlanet`류의 "플래닛 개수를
+바꾸는" 이벤트가 **존재하지 않습니다**(`AddDecoration, AnimateTrack, Bloom,
+Checkpoint, ColorTrack, CustomBackground, Flash, HallOfMirrors, MoveCamera,
+MoveDecorations, MoveTrack, PositionTrack, RecolorTrack, RepeatEvents,
+SetConditionalEvents, SetFilter, SetHitsound, SetPlanetRotation, SetSpeed,
+ShakeScreen, Twirl`가 전부입니다). `settings`에도 플래닛 개수 필드가 없고,
+애초에 ADOFAI는 **입력이 하나뿐인 원버튼 게임**이라(두 플래닛이 항상 함께
+움직이며 "여러 키를 동시에 누르는" 개념 자체가 없음) "트리플 플래닛" 같은
+영상들은 순정 파일이 아니라 게임 **모드(mod)**로 구현된 것으로 확인했습니다.
+
+그래서 실제로 모드 없이도 로드/플레이되도록, "동시타격"을 **아주 강한
+다운비트 직후에만 그 박을 4등분해 몰아치는 초고밀도 연타 뭉치**로
+근사했습니다(`MapStyle.enable_sync_hits`, `app/mapgen/schedule.py`의
+`SYNC_HIT_ENERGY_THRESHOLD_DB`/`SYNC_HIT_SPLIT_N`). 새 이벤트 타입을 전혀
+쓰지 않고 기존에 왕복 검증이 끝난 split_n 메커니즘만 재사용하므로, 박자
+정확도는 추가 검증 없이 그대로 보장됩니다(`test_sync_hits_style_map_is_playable`
+로 플레이 가능성까지 확인).
+
+## 현재 상태 (9단계까지 완료)
 
 `backend/` 아래에 FastAPI 프로젝트 골격을 구성했습니다. 헬스체크 엔드포인트와 테스트가 동작합니다.
 

@@ -1,7 +1,7 @@
 import copy
 
 from app.mapgen.engine import generate_map
-from app.mapgen.models import GeneratedMap, Tile
+from app.mapgen.models import GeneratedMap, MapStyle, Tile
 from app.storage.adofai_writer import build_adofai_document
 from app.storage.validator import validate_adofai_document
 from tests.mapgen_fixtures import make_analysis_result
@@ -10,6 +10,17 @@ from tests.mapgen_fixtures import make_analysis_result
 def test_real_generated_map_is_playable() -> None:
     analysis = make_analysis_result(bpm=140.0, duration_sec=20.0, drop_time_sec=10.0)
     generated = generate_map(analysis, 18, seed=1)
+    document = build_adofai_document(generated, song_filename="song.mp3")
+
+    report = validate_adofai_document(document, original_map=generated)
+
+    assert report.is_playable is True
+    assert report.errors == []
+
+
+def test_sync_hits_style_map_is_playable() -> None:
+    analysis = make_analysis_result(bpm=140.0, duration_sec=20.0, drop_time_sec=10.0)
+    generated = generate_map(analysis, 18, seed=1, style=MapStyle(enable_sync_hits=True))
     document = build_adofai_document(generated, song_filename="song.mp3")
 
     report = validate_adofai_document(document, original_map=generated)

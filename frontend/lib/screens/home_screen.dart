@@ -38,6 +38,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _magicCircle = false;
   bool _enableRush = false;
   bool _enableSlow = false;
+  bool _enableSyncHits = false;
 
   bool _isGenerating = false;
   bool _isEditing = false;
@@ -91,7 +92,12 @@ class _HomeScreenState extends State<HomeScreen> {
         fileName: audioFile.name,
         difficulty: _selectedDifficulty,
         seed: _parseSeed(),
-        style: MapStyle(magicCircle: _magicCircle, enableRush: _enableRush, enableSlow: _enableSlow),
+        style: MapStyle(
+          magicCircle: _magicCircle,
+          enableRush: _enableRush,
+          enableSlow: _enableSlow,
+          enableSyncHits: _enableSyncHits,
+        ),
       );
       setState(() {
         _generatedMap = map;
@@ -285,6 +291,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   label: const Text('슬로우 구간'),
                   selected: _enableSlow,
                   onSelected: busy ? null : (v) => setState(() => _enableSlow = v),
+                ),
+                FilterChip(
+                  label: const Text('동시타격(동타)'),
+                  selected: _enableSyncHits,
+                  onSelected: busy ? null : (v) => setState(() => _enableSyncHits = v),
                 ),
               ],
             ),

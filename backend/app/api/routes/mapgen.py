@@ -25,6 +25,7 @@ async def generate_map_from_audio(
     magic_circle: bool = Form(False),
     enable_rush: bool = Form(False),
     enable_slow: bool = Form(False),
+    enable_sync_hits: bool = Form(False),
 ) -> GeneratedMap:
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in SUPPORTED_EXTENSIONS:
@@ -50,7 +51,12 @@ async def generate_map_from_audio(
         except AudioAnalysisError as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    style = MapStyle(magic_circle=magic_circle, enable_rush=enable_rush, enable_slow=enable_slow)
+    style = MapStyle(
+        magic_circle=magic_circle,
+        enable_rush=enable_rush,
+        enable_slow=enable_slow,
+        enable_sync_hits=enable_sync_hits,
+    )
     return generate_map(analysis, difficulty, seed=seed, style=style)
 
 

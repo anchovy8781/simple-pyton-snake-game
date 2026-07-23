@@ -21,6 +21,11 @@ MapStyle 옵션(질주맵/슬로우)도 여기서 반영한다:
   낮춘 임시 템포 구간으로 쪼갠다. 진입/이탈은 Set Speed(순간 변경)가 아니라
   Change Speed처럼 여러 단계에 걸쳐 점진적으로 가속/감속한다. 모두 기존
   SetSpeed 메커니즘(구간별 BPM)을 재사용하므로 타이밍 정확도는 그대로 보장된다.
+- enable_sync_hits(동시타격/동타): 아주 강한 다운비트에서만 그 박을
+  SYNC_HIT_SPLIT_N개로 강제로 쪼개 순간적인 연타 뭉치를 만든다. ADOFAI는
+  입력이 하나뿐인 게임이고 공식 포맷에 다중 플래닛/동시입력 이벤트가 없어서
+  (조사 결과 없음을 확인), 실제로 여러 키를 동시에 누르는 것이 아니라
+  split_n을 이용한 초고밀도 연타로 "동시에 두드리는" 느낌만 근사한다.
 """
 
 import random
@@ -36,6 +41,10 @@ RUSH_ENERGY_THRESHOLD_DB = -15.0
 RUSH_MIN_WINDOW_SEC = 2.0
 SLOW_ENERGY_THRESHOLD_DB = -35.0
 SLOW_MIN_WINDOW_SEC = 2.0
+# 동시타격(동타): rush보다 더 엄격한 에너지 문턱값(순간적으로 아주 강한
+# 다운비트만) + 지속 시간 조건 없음(윈도우가 아니라 그 박 하나만 적용).
+SYNC_HIT_ENERGY_THRESHOLD_DB = -12.0
+SYNC_HIT_SPLIT_N = 4
 # 슬로우 구간 진입/이탈을 점진적으로 만드는 데 쓰는 램프(가속/감속) 길이와 단계 수.
 SLOW_RAMP_SEC = 2.0
 SLOW_RAMP_STEPS = 4
@@ -111,7 +120,12 @@ def build_tile_schedule(
         near_drop = _is_within_drop_window(t, drop_times, DROP_EMPHASIS_WINDOW_SEC)
         in_rush = _is_within_any_window(t, rush_windows)
         energy_db = _nearest_energy_db(t, analysis.energy_profile)
-        split_n = _choose_split(profile, rng, near_drop, in_rush, energy_db)
+        sync_hit = (
+            style.enable_sync_hits
+            and _is_near_any(t, downbeat_times, DOWNBEAT_EPSILON_SEC)
+            and energy_db >= SYNC_HIT_ENERGY_THRESHOLD_DB
+        )
+        split_n = SYNC_HIT_SPLIT_N if sync_hit else _choose_split(profile, rng, near_drop, in_rush, energy_db)
         sub_duration = beat_duration / split_n
 
         for _ in range(split_n):

@@ -27,6 +27,12 @@ class MapStyle(BaseModel):
     enable_slow: bool = False
     # 슬로우 구간에서 BPM에 곱할 배수 (0.6 = 기존 템포의 60%로 감속)
     slow_speed_factor: float = Field(default=0.6, gt=0.0, lt=1.0)
+    # 동시타격(동타): 강한 다운비트(예: 킥+스네어가 겹치는 순간)에서, 그 박만
+    # 고정된 배수로 잘게 쪼개 순간적으로 빠른 연타 뭉치를 만든다. ADOFAI는
+    # 한 번에 하나의 입력만 받는 게임이라 실제 "동시에 여러 키를 누르는"
+    # 메커니즘은 없으므로(공식 .adofai 포맷에도 그런 이벤트가 없음), 아주
+    # 짧은 간격으로 몰아치는 연타로 "동시에 두드리는" 느낌을 낸다.
+    enable_sync_hits: bool = False
 
 
 class Tile(BaseModel):

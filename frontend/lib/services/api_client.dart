@@ -45,6 +45,7 @@ class ApiClient {
       ..fields['magic_circle'] = style.magicCircle.toString()
       ..fields['enable_rush'] = style.enableRush.toString()
       ..fields['enable_slow'] = style.enableSlow.toString()
+      ..fields['enable_sync_hits'] = style.enableSyncHits.toString()
       ..files.add(http.MultipartFile.fromBytes('file', audioBytes, filename: fileName));
 
     if (seed != null) {

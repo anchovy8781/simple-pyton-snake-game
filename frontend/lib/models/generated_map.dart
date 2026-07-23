@@ -12,11 +12,13 @@ class MapStyle {
   final bool magicCircle;
   final bool enableRush;
   final bool enableSlow;
+  final bool enableSyncHits;
 
   const MapStyle({
     this.magicCircle = false,
     this.enableRush = false,
     this.enableSlow = false,
+    this.enableSyncHits = false,
   });
 }
 

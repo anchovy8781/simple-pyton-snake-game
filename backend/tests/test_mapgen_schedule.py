@@ -132,3 +132,31 @@ def test_enable_slow_ramps_gradually_instead_of_jumping() -> None:
     # 순간적으로 120 -> 60으로 바뀌는 게 아니라 그 사이의 여러 단계가 있어야 한다.
     assert len(bpms) > 2
     assert all(60.0 <= b <= 120.0 for b in bpms)
+
+
+def test_enable_sync_hits_forces_split_only_on_loud_downbeats() -> None:
+    # drop_time_sec=8.0 -> 8초 이후 에너지가 -6dB(문턱값 -12dB 이상)로 커진다.
+    analysis = make_analysis_result(bpm=120.0, duration_sec=16.0, drop_time_sec=8.0)
+    profile = profile_for_level(1)  # beat_split_weights={1: 1.0} -> 동타 없이는 항상 split=1
+
+    without_sync = build_tile_schedule(analysis, profile, random.Random(6))
+    with_sync = build_tile_schedule(analysis, profile, random.Random(6), style=MapStyle(enable_sync_hits=True))
+
+    # 동타를 켜지 않으면 이 난이도(레벨 1)에서는 항상 split=1이다.
+    assert all(t.split_n == 1 for t in without_sync)
+
+    # split_n은 "이 타일로 들어오는 전이"를 뜻하므로, 동타 버스트는 다운비트
+    # 타일 자체가 아니라 그 다음 한 박(다운비트 직후 0.5초) 동안의 타일들에 걸린다.
+    # 다운비트는 4박마다(2초 간격) 8,10,12,14초에 있고, 그중 8초 이후만 시끄럽다.
+    burst_windows = [(db, db + 0.5) for db in (8.0, 10.0, 12.0, 14.0)]
+
+    def in_burst(t) -> bool:
+        return any(start < t.time_sec <= end for start, end in burst_windows)
+
+    burst_tiles = [t for t in with_sync if in_burst(t)]
+    other_tiles = [t for t in with_sync if not in_burst(t)]
+
+    assert burst_tiles
+    assert all(t.split_n == 4 for t in burst_tiles)
+    # 나머지 구간(조용한 부분 전체 + 시끄러운 구간의 버스트 이외 부분)은 영향받지 않는다.
+    assert all(t.split_n == 1 for t in other_tiles)
