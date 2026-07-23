@@ -77,3 +77,17 @@ def test_import_endpoint_rejects_invalid_json() -> None:
     )
 
     assert response.status_code == 400
+
+
+def test_validate_endpoint_reports_real_generated_map_as_playable() -> None:
+    generated_map = _generate_map()
+
+    response = client.post(
+        "/storage/validate",
+        json={"existing_map": generated_map, "song_filename": "song.mp3"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["is_playable"] is True
+    assert data["issues"] == []

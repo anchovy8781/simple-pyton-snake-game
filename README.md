@@ -181,6 +181,7 @@ AI 편집 프롬프트(`app/ai/instruction_parser.py`)도 손봤습니다: 음�
 - 저장: `app/storage/adofai_writer.py` — 타일의 상대 회전각을 누적해 `angleData`(절대 각도)를 만들고, 방향이 바뀌는 타일마다 **Twirl** 액션을 넣어 실제 재생 시간이 방향과 무관하게 원래 의도한 박자를 유지하도록 보정한다. 구간별 BPM이 바뀌는 지점에는 `SetSpeed` 액션을 넣는다
 - 불러오기: `app/storage/adofai_reader.py` — `angleData`+`actions`(SetSpeed, Twirl)로부터 각 타일의 실제 시각을 역산해 `GeneratedMap`으로 되돌린다. 저장 시 사용한 것과 정확히 대응하는 공식으로 구현해, 이 왕복 변환이 정확히 일치하는지가 곧 위 "회전각→박자" 공식이 맞는지를 검증하는 테스트가 된다
 - API: `POST /storage/export` (기존 맵 + 곡 파일명/아티스트 등 메타데이터 → `.adofai` 파일 다운로드), `POST /storage/import` (`.adofai` 파일 업로드 → 맵 JSON, 이어서 편집 가능)
+- **플레이 가능성 검증**: `app/storage/validator.py`의 `validate_adofai_document()`가 (1) 구조 검증(angleData/settings 필수 필드, NaN·무한대 값, SetSpeed BPM 유효성), (2) 타이밍 검증(타일 간격이 사람이 반응 가능한 범위 0.04~15초를 벗어나면 경고), (3) 왕복 일치 검증(저장한 파일을 다시 읽었을 때 원본과 타일 시각이 정확히 일치하는지, 어긋나면 오류)을 수행한다. `POST /storage/export`는 내보내기 직전 이 검증을 자체적으로 통과해야만 파일을 반환하고(실패 시 500), `POST /storage/validate`로 저장 없이 미리 점검만 할 수도 있다
 
 **주의(Twirl 액션의 정확한 JSON 스펙)**: Twirl 액션의 정확한 필드 구성은 공식 문서가 아니라 커뮤니티 도구(ADOFAI-Map-Converter, adofai-angle-calculator)의 역공학 결과를 참고해 `{"floor": N, "eventType": "Twirl"}` 형태로 구현했습니다. 실제 게임/에디터에서 열었을 때 회전 "방향"이 의도와 다르게 보인다면 이 부분을 우선 의심해야 합니다 — **타이밍(박자) 자체는 Twirl 필드명과 무관하게 위에서 설명한 회전각→박자 공식으로 이미 왕복 테스트(65,539개 타일 전이, 최대 오차 3.5e-15초)로 검증되어 있습니다.** 즉 최악의 경우도 "일부 타일이 반대 방향으로 꺾여 보이는" 시각적 문제이지, 음악과 어긋나는 문제는 아닙니다.
 
