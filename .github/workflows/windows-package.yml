@@ -1,0 +1,91 @@
+# 8단계: exe 패키징
+#
+# 리눅스 개발 컨테이너에는 Windows 툴체인이 없어 .exe를 직접 만들 수 없으므로,
+# windows-latest 러너에서 백엔드(PyInstaller)와 GUI(Flutter Windows)를 각각
+# 빌드한 뒤 하나의 폴더로 합쳐 zip으로 업로드한다.
+#
+# 결과물 배치 규칙(frontend/lib/services/backend_launcher.dart와 반드시 함께
+# 맞춰야 한다):
+#   adofai_map_generator/
+#     adofai_map_generator.exe   <- Flutter GUI
+#     ...(Flutter 런타임 파일들)
+#     adofai_backend/
+#       adofai_backend.exe       <- PyInstaller로 묶은 FastAPI 백엔드
+#       ...(백엔드 의존 라이브러리)
+#
+# GUI는 시작 시 자신과 같은 폴더의 adofai_backend/adofai_backend.exe를 찾아
+# 자동으로 실행한다(backend_launcher.dart). 못 찾으면 조용히 넘어가고,
+# 사용자가 기존처럼 백엔드를 수동으로 켜고 GUI에 주소를 입력해도 된다.
+
+name: Windows Package
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-windows-package:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/packaging/requirements-build.txt
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: |
+          pip install -r requirements.txt
+          pip install -r packaging/requirements-build.txt
+
+      - name: Build backend .exe (PyInstaller)
+        working-directory: backend
+        run: pyinstaller packaging/adofai_backend.spec --distpath dist --workpath build --noconfirm
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Enable Windows desktop support
+        run: flutter config --enable-windows-desktop
+
+      - name: Install GUI dependencies
+        working-directory: frontend
+        run: flutter pub get
+
+      - name: Build GUI (Flutter Windows release)
+        working-directory: frontend
+        run: flutter build windows --release
+
+      - name: Assemble package
+        shell: bash
+        run: |
+          set -eu
+          OUT=dist_package/adofai_map_generator
+          mkdir -p "$OUT"
+          cp -r frontend/build/windows/x64/runner/Release/. "$OUT/"
+          mkdir -p "$OUT/adofai_backend"
+          cp -r backend/dist/adofai_backend/. "$OUT/adofai_backend/"
+
+      - name: Zip package
+        shell: bash
+        run: |
+          cd dist_package
+          7z a -tzip adofai_map_generator_windows.zip adofai_map_generator
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: adofai_map_generator_windows
+          path: dist_package/adofai_map_generator_windows.zip
+          retention-days: 30

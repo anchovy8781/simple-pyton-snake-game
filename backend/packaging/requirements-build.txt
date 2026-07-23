@@ -1,0 +1,3 @@
+# 8단계: exe 패키징 전용 의존성. 일반 개발/테스트에는 필요 없으므로
+# requirements.txt와 분리했다.
+pyinstaller==6.11.1

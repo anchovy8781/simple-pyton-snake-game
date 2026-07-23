@@ -42,7 +42,7 @@
 - [x] 5단계 — GUI 제작 (Flutter 데스크톱 앱)
 - [x] 6단계 — 파일 저장 (ADOFAI `.adofai` 커스텀 레벨 포맷 저장/불러오기)
 - [x] 7단계 — 난이도 1~26 세분화 + 패턴 스타일 옵션(마법진/질주맵/슬로우) + 테스트 보강
-- [ ] 8단계 — 배포용 실행 파일(.exe) 패키징 (백엔드: PyInstaller, GUI: Flutter Windows build)
+- [x] 8단계 — 배포용 실행 파일(.exe) 패키징 (백엔드: PyInstaller, GUI: Flutter Windows build, GUI 시작 시 백엔드 자동 실행)
 - [ ] 9단계 — 동시타격(동타) 자동 배치 + 배경 애니메이션 생성 (ADOFAI 포맷 추가 조사 필요)
 
 ## ⚠️ 6단계에서 발견하고 수정한 핵심 오류 (박자 정확도)
@@ -138,7 +138,41 @@ AI 편집 프롬프트(`app/ai/instruction_parser.py`)도 손봤습니다: 음�
 기본) × 시드 20개(총 66,354개 타일 전이)에서 최대 오차 `4.4e-16초`로, 점진적
 템포 램프와 고난도 마법진 모티프를 켜도 박자 정확도는 그대로 유지됨을 확인했습니다.
 
-## 현재 상태 (7단계까지 완료)
+## 8단계: exe 패키징
+
+이 리눅스 개발 컨테이너에는 Windows 툴체인이 없어 진짜 `.exe`를 여기서 직접
+만들 수는 없습니다. 대신 **Windows에서(또는 CI의 windows-latest 러너에서)
+그대로 실행하면 실제 exe가 나오는 빌드 스펙/워크플로우**를 작성하고, 여기서
+실행 가능한 부분(백엔드 진입점 스모크 테스트, `flutter analyze`/`flutter test`)은
+직접 검증했습니다.
+
+- **백엔드**: `backend/packaging/run_backend.py`가 PyInstaller의 시작점입니다
+  (`uvicorn.run(app, host="127.0.0.1", port=8000)`만 호출하는 얇은 진입점).
+  `backend/packaging/adofai_backend.spec`이 librosa/soundfile처럼 PyInstaller가
+  정적 분석만으로 못 찾는 동적 임포트를 `collect_submodules`로 보강해 묶습니다.
+  이 컨테이너에서 `python packaging/run_backend.py`를 실제로 실행해 `/health`가
+  `{"status": "ok"}`를 반환하는 것까지 확인했습니다(PyInstaller로 묶는 과정
+  자체는 Windows에서만 가능).
+- **GUI**: 기존 `frontend/windows/` 러너 스캐폴드(5단계에서 이미 생성됨)를
+  그대로 사용합니다. `flutter build windows --release`는 Windows에서 실행해야
+  합니다.
+- **자동 실행**: 사용자가 서버를 직접 켤 필요가 없도록, GUI 실행 파일과 같은
+  폴더의 `adofai_backend/adofai_backend.exe`를 찾아 시작 시 자동으로 띄우는
+  로직을 추가했습니다(`frontend/lib/services/backend_launcher.dart`,
+  `main.dart`에서 `unawaited(tryLaunchBundledBackend())`로 호출). 이미 백엔드가
+  떠 있으면(`/health` 응답) 다시 띄우지 않고, 번들된 실행 파일을 못 찾으면
+  조용히 넘어가 기존처럼 수동으로 백엔드를 켜고 주소를 입력하는 방식이 그대로
+  동작합니다 — 이 자동 실행 로직은 절대 예외를 던지지 않도록 감싸 앱 시작을
+  막지 않습니다.
+- **CI 패키징**: `.github/workflows/windows-package.yml`이 `workflow_dispatch`
+  또는 `v*` 태그 push 시 windows-latest 러너에서 (1) PyInstaller로 백엔드 exe
+  빌드 → (2) Flutter Windows release 빌드 → (3) GUI 폴더 안에
+  `adofai_backend/` 서브폴더로 백엔드를 복사해 하나로 합친 뒤 → (4) zip으로
+  아티팩트 업로드까지 수행합니다. 배치 규칙(같은 폴더 + `adofai_backend/`
+  서브폴더)은 워크플로우와 `backend_launcher.dart`가 같은 값을 공유하므로,
+  둘 중 하나를 바꾸면 다른 쪽도 함께 바꿔야 합니다.
+
+## 현재 상태 (8단계까지 완료)
 
 `backend/` 아래에 FastAPI 프로젝트 골격을 구성했습니다. 헬스체크 엔드포인트와 테스트가 동작합니다.
 
@@ -223,6 +257,27 @@ flutter run -d linux    # 또는 -d windows (Windows 환경에서)
 
 앱 실행 후 상단의 "백엔드 서버 주소"가 실행 중인 FastAPI 서버(기본 `http://127.0.0.1:8000`)를 가리키는지 확인하세요.
 
+**exe 패키징 (Windows에서 실행)**
+
+```powershell
+# 1) 백엔드를 단일 exe로 묶기
+cd backend
+pip install -r requirements.txt -r packaging/requirements-build.txt
+pyinstaller packaging/adofai_backend.spec --distpath dist --workpath build
+# 결과: backend/dist/adofai_backend/adofai_backend.exe
+
+# 2) GUI를 Windows exe로 빌드
+cd ../frontend
+flutter build windows --release
+# 결과: frontend/build/windows/x64/runner/Release/adofai_map_generator.exe
+
+# 3) 하나로 합치기: Release 폴더 안에 adofai_backend/ 폴더를 만들고
+#    backend/dist/adofai_backend/의 내용을 통째로 복사
+```
+
+또는 GitHub Actions에서 `Windows Package` 워크플로우(`workflow_dispatch`)를
+수동 실행하면 위 세 단계를 자동으로 수행해 zip 아티팩트를 만들어 줍니다.
+
 ### 테스트
 
 ```bash
@@ -249,8 +304,12 @@ backend/
     audio/               # 오디오 분석 모듈 (BPM/비트/다운비트/에너지/템포변화/드롭)
     mapgen/              # 맵 생성 엔진 (난이도별 분할/회전 패턴, 구간 재생성)
     ai/                  # AI 연동 (Gemini 무료 티어 + 규칙 기반 폴백, 자연어 구간 편집)
-    storage/             # ADOFAI 레벨 파일 저장/불러오기 (adofai_writer, adofai_reader)
+    storage/             # ADOFAI 레벨 파일 저장/불러오기 (adofai_writer, adofai_reader, validator)
     models/              # 공용 데이터 모델 (Pydantic)
+  packaging/             # 8단계: exe 패키징 (PyInstaller 진입점 + spec)
+    run_backend.py
+    adofai_backend.spec
+    requirements-build.txt
   tests/                # pytest 테스트
   requirements.txt
   pyproject.toml
@@ -260,8 +319,12 @@ frontend/               # Flutter 데스크톱 UI (Linux/Windows)
     main.dart
     models/generated_map.dart   # 백엔드 모델과 대응하는 Dart 데이터 클래스
     services/api_client.dart     # FastAPI 백엔드 HTTP 클라이언트
+    services/backend_launcher.dart  # 8단계: 번들된 백엔드 exe 자동 실행
     screens/home_screen.dart     # 메인 화면 (파일 선택~구간 재생성)
     widgets/                     # DifficultySelector, MapPreview(CustomPainter)
   test/                          # flutter_test 위젯 테스트
   linux/, windows/               # 데스크톱 플랫폼별 러너 (flutter create 스캐폴드)
+.github/workflows/
+  blank.yml                # CI: pytest + flutter analyze/test
+  windows-package.yml      # 8단계: windows-latest에서 exe 패키징 후 zip 아티팩트 업로드
 ```
