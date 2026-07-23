@@ -22,7 +22,11 @@ class MapStyle(BaseModel):
     # 빠른 연속 타일로 채운다.
     enable_rush: bool = False
     # 슬로우: 곡에서 가장 조용한 구간을 찾아 그 부분의 템포를 일시적으로 늦춘다.
+    # 구간 진입/이탈은 순간적으로(Set Speed) 바뀌지 않고 여러 박에 걸쳐
+    # 점진적으로 가속/감속한다(Change Speed 느낌).
     enable_slow: bool = False
+    # 슬로우 구간에서 BPM에 곱할 배수 (0.6 = 기존 템포의 60%로 감속)
+    slow_speed_factor: float = Field(default=0.6, gt=0.0, lt=1.0)
 
 
 class Tile(BaseModel):

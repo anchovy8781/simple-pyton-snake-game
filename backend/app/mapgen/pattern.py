@@ -18,13 +18,22 @@ def generate_angles(
     force_first_straight: bool = True,
     initial_sign: int = 1,
     flip_probability: float = 0.7,
+    sign_cycle: list[int] | None = None,
+    sign_cycle_noise: float = 0.0,
 ) -> list[float]:
     """각 타일의 직전 방향 대비 상대 회전각(도) 목록을 생성한다.
 
     각 타일의 회전 크기는 `180 * (1 - 1/split_n)`으로 고정된다(split_n=1이면
-    0, 즉 직진 = 정확히 한 박). 방향(부호)만 선택하며, 직전과 반대 방향으로
-    꺾는 경향을 둬 자연스러운 지그재그 흐름을 만들고, 동일한 (split_n, 방향)
-    조합의 연속 반복을 난이도별 한도로 제한한다(반복 최소화).
+    0, 즉 직진 = 정확히 한 박). 방향(부호)만 선택한다.
+
+    기본 동작(sign_cycle=None)은 직전과 반대 방향으로 꺾는 경향을 둬 자연스러운
+    지그재그 흐름을 만들고, 동일한 (split_n, 방향) 조합의 연속 반복을 난이도별
+    한도로 제한한다(반복 최소화).
+
+    sign_cycle을 넘기면(마법진 고난도 모드 등) 방향을 무작위 대신 주어진
+    부호 목록을 순서대로 반복해서 사용한다 — 같은 모양이 계속 되풀이되는
+    나선/로제트 패턴을 만들 때 쓴다. sign_cycle_noise(0~1)만큼의 확률로는
+    그래도 기존 무작위 로직을 섞어 "약간씩 변형"을 준다.
 
     force_first_straight=True(전체 맵 생성 기본값)면 첫 타일의 회전각을 0으로
     고정한다. 구간 재생성처럼 이미 진행 방향이 있는 중간 구간을 이어받을 때는
@@ -38,6 +47,7 @@ def generate_angles(
     last_sign = initial_sign
     repeat_streak = 0
     last_key: tuple[int, int] | None = None
+    cycle_index = 0
 
     remaining = tile_timings
     if force_first_straight:
@@ -50,6 +60,9 @@ def generate_angles(
         if magnitude == 0.0:
             # split_n=1(한 박 그대로)은 항상 직진이며 방향 개념이 없다.
             sign = last_sign
+        elif sign_cycle and rng.random() >= sign_cycle_noise:
+            sign = sign_cycle[cycle_index % len(sign_cycle)]
+            cycle_index += 1
         else:
             avoid_repeat = (
                 last_key is not None

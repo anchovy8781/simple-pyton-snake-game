@@ -9,6 +9,15 @@ from app.mapgen.pattern import generate_angles
 from app.mapgen.schedule import TileTiming, build_tile_schedule
 from app.models.audio import AudioAnalysisResult
 
+# 20레벨 이상의 마법진은 단순한 한쪽 방향 나선이 아니라, 실제 커뮤니티 "레인보우
+# 체이스" 마법진 차트처럼 짧은 방향 모티프를 반복해 촘촘한 로제트/나선 무늬를
+# 만든다. 모티프 자체는 미학적 선택이라(정답이 있는 게임 메커니즘이 아니므로)
+# 자유롭게 설계했다 — sign_cycle_noise만큼은 무작위성을 섞어 매번 살짝 다르게
+# 변형되게 한다.
+MAGIC_CIRCLE_HIGH_LEVEL_THRESHOLD = 20
+MAGIC_CIRCLE_HIGH_LEVEL_SIGN_CYCLE = [1, 1, 1, -1, -1, 1, -1, 1, 1, -1, -1, 1]
+MAGIC_CIRCLE_HIGH_LEVEL_NOISE = 0.12
+
 
 def generate_map(
     analysis: AudioAnalysisResult,
@@ -19,16 +28,30 @@ def generate_map(
     """오디오 분석 결과 전체로부터 새 맵을 생성한다. difficulty는 1(가장 쉬움)~26(가장 어려움)."""
     style = style or MapStyle()
     profile = profile_for_level(difficulty)
+    sign_cycle: list[int] | None = None
+    sign_cycle_noise = 0.0
+
     if style.magic_circle:
-        # 마법진: 방향을 절대 바꾸지 않아 항상 한쪽으로만 꺾이는 나선/원형 경로를 만든다.
-        # (반복 최소화가 방향을 강제로 바꾸지 않도록 반복 허용 한도도 함께 넉넉히 늘린다.)
-        profile = with_flip_probability(profile, 0.0)
-        profile = replace(profile, max_consecutive_repeat=10**9)
+        if difficulty >= MAGIC_CIRCLE_HIGH_LEVEL_THRESHOLD:
+            # 고난도 마법진: 반복 모티프 + 직진(split=1) 없이 촘촘하게 채운다.
+            profile = _densen_for_magic_circle(profile)
+            sign_cycle = MAGIC_CIRCLE_HIGH_LEVEL_SIGN_CYCLE
+            sign_cycle_noise = MAGIC_CIRCLE_HIGH_LEVEL_NOISE
+        else:
+            # 저난도 마법진: 방향을 절대 바꾸지 않는 단순한 나선/원형 경로.
+            profile = with_flip_probability(profile, 0.0)
+            profile = replace(profile, max_consecutive_repeat=10**9)
+
     rng = random.Random(seed)
 
     tile_timings = build_tile_schedule(analysis, profile, rng, style=style)
     turn_angles = generate_angles(
-        tile_timings, profile.max_consecutive_repeat, rng, flip_probability=profile.flip_probability
+        tile_timings,
+        profile.max_consecutive_repeat,
+        rng,
+        flip_probability=profile.flip_probability,
+        sign_cycle=sign_cycle,
+        sign_cycle_noise=sign_cycle_noise,
     )
 
     tiles = [
@@ -51,6 +74,15 @@ def generate_map(
         duration_sec=analysis.duration_sec,
         tiles=tiles,
     )
+
+
+def _densen_for_magic_circle(profile: DifficultyProfile) -> DifficultyProfile:
+    """고난도 마법진용으로 직진(split=1) 비중을 없애 항상 꺾이게 만든다."""
+    weights = dict(profile.beat_split_weights)
+    weights.pop(1, None)
+    if not weights:
+        weights = {2: 1.0}
+    return replace(profile, beat_split_weights=weights)
 
 
 def regenerate_segment(

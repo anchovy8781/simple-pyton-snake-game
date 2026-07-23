@@ -95,3 +95,30 @@ def test_higher_flip_probability_produces_more_direction_changes() -> None:
         return sum(1 for a, b in zip(signs, signs[1:]) if a != b)
 
     assert count_flips(chaotic) > count_flips(steady)
+
+
+def test_sign_cycle_repeats_given_pattern_without_noise() -> None:
+    timings = _make_flat_timeline(24)
+    cycle = [1, 1, -1]
+
+    angles = generate_angles(
+        timings, max_consecutive_repeat=200, rng=random.Random(1), sign_cycle=cycle, sign_cycle_noise=0.0
+    )
+
+    signs = [1 if a > 0 else -1 for a in angles[1:]]
+    expected = [cycle[i % len(cycle)] for i in range(len(signs))]
+    assert signs == expected
+
+
+def test_sign_cycle_noise_introduces_some_deviation() -> None:
+    timings = _make_flat_timeline(200)
+    cycle = [1, 1, -1]
+
+    angles = generate_angles(
+        timings, max_consecutive_repeat=200, rng=random.Random(2), sign_cycle=cycle, sign_cycle_noise=0.5
+    )
+
+    signs = [1 if a > 0 else -1 for a in angles[1:]]
+    expected = [cycle[i % len(cycle)] for i in range(len(signs))]
+    mismatches = sum(1 for s, e in zip(signs, expected) if s != e)
+    assert mismatches > 0

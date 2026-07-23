@@ -110,3 +110,25 @@ def test_enable_slow_lowers_bpm_in_quiet_window() -> None:
     quiet_tiles = [t for t in timings if 4.5 <= t.time_sec <= 7.5]
     assert quiet_tiles
     assert all(t.bpm < 120.0 for t in quiet_tiles)
+
+
+def test_enable_slow_ramps_gradually_instead_of_jumping() -> None:
+    """Change Speed처럼 슬로우 구간 진입이 한 번에 뚝 떨어지지 않고 여러
+    단계로 점진적으로 느려져야 한다."""
+    analysis = make_analysis_result(bpm=120.0, duration_sec=16.0, drop_time_sec=None)
+    energy_profile = [
+        EnergyPoint(time_sec=round(i * 0.1, 3), rms_db=-50.0 if 4.0 <= i * 0.1 <= 10.0 else -10.0)
+        for i in range(160)
+    ]
+    analysis = analysis.model_copy(update={"energy_profile": energy_profile})
+    profile = profile_for_level(1)
+
+    timings = build_tile_schedule(
+        analysis, profile, random.Random(5), style=MapStyle(enable_slow=True, slow_speed_factor=0.5)
+    )
+
+    entering = [t for t in timings if 4.0 <= t.time_sec <= 6.0]
+    bpms = sorted({t.bpm for t in entering})
+    # 순간적으로 120 -> 60으로 바뀌는 게 아니라 그 사이의 여러 단계가 있어야 한다.
+    assert len(bpms) > 2
+    assert all(60.0 <= b <= 120.0 for b in bpms)

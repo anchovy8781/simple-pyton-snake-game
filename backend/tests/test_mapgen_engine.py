@@ -41,6 +41,19 @@ def test_magic_circle_style_never_flips_direction() -> None:
     assert len(non_zero_signs) <= 1
 
 
+def test_magic_circle_high_level_uses_repeating_motif_with_no_straight_tiles() -> None:
+    analysis = make_analysis_result(duration_sec=16.0)
+
+    result = generate_map(analysis, 24, seed=7, style=MapStyle(magic_circle=True))
+
+    # 고난도 마법진은 직진(split=1) 없이 계속 꺾여야 하고, 방향은 한쪽으로만
+    # 고정되지 않고 좌/우가 섞여 나와야 한다(반복 모티프 + 약간의 변형).
+    non_first_tiles = result.tiles[1:]
+    assert all(t.turn_angle_deg != 0.0 for t in non_first_tiles)
+    signs = {1 if t.turn_angle_deg > 0 else -1 for t in non_first_tiles}
+    assert signs == {1, -1}
+
+
 def test_regenerate_segment_keeps_timing_and_only_changes_segment_angles() -> None:
     analysis = make_analysis_result(duration_sec=16.0)
     original = generate_map(analysis, 13, seed=1)

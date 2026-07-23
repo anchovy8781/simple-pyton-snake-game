@@ -18,7 +18,9 @@ MapStyle 옵션(질주맵/슬로우)도 여기서 반영한다:
 - enable_rush(질주맵): 지속적으로 에너지가 높은 구간에서는 split=1(쉬는 타일
   없이 직진)을 후보에서 빼, 끊임없이 빠르게 이어지는 느낌을 만든다.
 - enable_slow(슬로우): 곡에서 가장 조용하고 긴 구간을 찾아 그 구간만 BPM을
-  낮춘 임시 템포 구간으로 쪼갠다(SetSpeed 액션으로 자연스럽게 이어진다).
+  낮춘 임시 템포 구간으로 쪼갠다. 진입/이탈은 Set Speed(순간 변경)가 아니라
+  Change Speed처럼 여러 단계에 걸쳐 점진적으로 가속/감속한다. 모두 기존
+  SetSpeed 메커니즘(구간별 BPM)을 재사용하므로 타이밍 정확도는 그대로 보장된다.
 """
 
 import random
@@ -34,7 +36,9 @@ RUSH_ENERGY_THRESHOLD_DB = -15.0
 RUSH_MIN_WINDOW_SEC = 2.0
 SLOW_ENERGY_THRESHOLD_DB = -35.0
 SLOW_MIN_WINDOW_SEC = 2.0
-SLOW_TEMPO_FACTOR = 0.6
+# 슬로우 구간 진입/이탈을 점진적으로 만드는 데 쓰는 램프(가속/감속) 길이와 단계 수.
+SLOW_RAMP_SEC = 2.0
+SLOW_RAMP_STEPS = 4
 _MIN_STEP_SEC = 1e-6
 
 
@@ -68,7 +72,7 @@ def build_tile_schedule(
 
     sections = _build_tempo_sections(analysis)
     if style.enable_slow:
-        sections = _apply_slow_sections(sections, analysis.energy_profile)
+        sections = _apply_slow_sections(sections, analysis.energy_profile, style.slow_speed_factor)
     if not sections:
         return []
 
@@ -145,9 +149,9 @@ def _build_tempo_sections(analysis: AudioAnalysisResult) -> list[tuple[float, fl
 
 
 def _apply_slow_sections(
-    sections: list[tuple[float, float, float]], energy_profile: list[EnergyPoint]
+    sections: list[tuple[float, float, float]], energy_profile: list[EnergyPoint], slow_factor: float
 ) -> list[tuple[float, float, float]]:
-    """가장 길고 조용한 구간을 찾아 그 부분만 템포를 늦춘 구간으로 쪼갠다."""
+    """가장 길고 조용한 구간을 찾아 그 부분의 템포를 점진적으로 늦췄다가 되돌린다."""
     quiet_windows = _find_windows(energy_profile, SLOW_ENERGY_THRESHOLD_DB, SLOW_MIN_WINDOW_SEC, above=False)
     if not quiet_windows:
         return sections
@@ -164,11 +168,59 @@ def _apply_slow_sections(
 
         if start < overlap_start:
             new_sections.append((start, overlap_start, bpm))
-        new_sections.append((overlap_start, overlap_end, bpm * SLOW_TEMPO_FACTOR))
+        new_sections.extend(_ramped_slow_sections(overlap_start, overlap_end, bpm, slow_factor))
         if overlap_end < end:
             new_sections.append((overlap_end, end, bpm))
 
     return new_sections
+
+
+def _ramped_slow_sections(
+    start: float, end: float, bpm: float, slow_factor: float
+) -> list[tuple[float, float, float]]:
+    """[start, end) 구간의 템포를 slow_factor까지 여러 단계로 점진적으로
+    낮췄다가(가속/감속, Change Speed) 다시 원래 속도로 되돌린다. 구간이 램프
+    두 번을 넣기에 너무 짧으면 감속과 가속이 중간 지점에서 바로 만나는
+    V자 형태가 된다.
+    """
+    ramp_duration = min(SLOW_RAMP_SEC, (end - start) / 2)
+    if ramp_duration <= 0:
+        return [(start, end, bpm * slow_factor)]
+
+    ramp_down_end = start + ramp_duration
+    ramp_up_start = end - ramp_duration
+    if ramp_down_end > ramp_up_start:
+        midpoint = start + (end - start) / 2
+        ramp_down_end = ramp_up_start = midpoint
+
+    slow_sections: list[tuple[float, float, float]] = []
+    slow_sections.extend(_ramp_steps(start, ramp_down_end, bpm, bpm * slow_factor))
+    if ramp_down_end < ramp_up_start:
+        slow_sections.append((ramp_down_end, ramp_up_start, bpm * slow_factor))
+    slow_sections.extend(_ramp_steps(ramp_up_start, end, bpm * slow_factor, bpm))
+
+    return slow_sections
+
+
+def _ramp_steps(
+    start: float, end: float, bpm_from: float, bpm_to: float
+) -> list[tuple[float, float, float]]:
+    """[start, end) 구간을 SLOW_RAMP_STEPS개의 작은 구간으로 나눠 BPM을
+    bpm_from에서 bpm_to까지 계단식으로 보간한다(SetSpeed만 있으면 되므로
+    별도의 미검증 액션 없이 안전하게 '점진적 변화'를 흉내낸다).
+    """
+    duration = end - start
+    if duration <= 0:
+        return []
+
+    steps = SLOW_RAMP_STEPS
+    step_duration = duration / steps
+    result: list[tuple[float, float, float]] = []
+    for i in range(steps):
+        progress = (i + 1) / steps
+        step_bpm = bpm_from + (bpm_to - bpm_from) * progress
+        result.append((start + i * step_duration, start + (i + 1) * step_duration, step_bpm))
+    return result
 
 
 def _choose_split(
