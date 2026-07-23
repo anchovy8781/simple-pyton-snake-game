@@ -34,13 +34,14 @@ def parse_instruction_rule_based(
     text = instruction.strip()
     start_sec, end_sec = _extract_range(text, duration_sec, drop_times_sec or [])
 
+    # 난이도는 1~26 스케일이므로 한 단계가 아니라 체감할 수 있는 폭으로 이동시킨다.
     difficulty_delta = 0
     if any(w in text for w in _EXTREME_WORDS):
-        difficulty_delta += 2
+        difficulty_delta += 10
     elif any(w in text for w in _HARDER_WORDS):
-        difficulty_delta += 1
+        difficulty_delta += 4
     if any(w in text for w in _EASIER_WORDS):
-        difficulty_delta -= 1
+        difficulty_delta -= 4
 
     return EditInstruction(
         start_sec=start_sec,

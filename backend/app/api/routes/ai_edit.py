@@ -27,7 +27,11 @@ async def edit_segment(request: EditSegmentRequest) -> EditSegmentResponse:
     drop_times = sorted({tile.time_sec for tile in request.existing_map.tiles if tile.is_drop_emphasis})
 
     parsed = parse_edit_instruction(
-        request.instruction, request.existing_map.duration_sec, drop_times_sec=drop_times
+        request.instruction,
+        request.existing_map.duration_sec,
+        drop_times_sec=drop_times,
+        bpm=request.existing_map.bpm,
+        current_difficulty=request.existing_map.difficulty,
     )
 
     try:

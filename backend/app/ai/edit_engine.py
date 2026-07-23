@@ -3,11 +3,9 @@
 from dataclasses import replace
 
 from app.ai.models import EditInstruction
-from app.mapgen.difficulty import DIFFICULTY_PROFILES
+from app.mapgen.difficulty import profile_for_level, shift_difficulty
 from app.mapgen.engine import regenerate_segment
-from app.mapgen.models import Difficulty, GeneratedMap
-
-_DIFFICULTY_ORDER = [Difficulty.EASY, Difficulty.NORMAL, Difficulty.HARD, Difficulty.EXTREME]
+from app.mapgen.models import GeneratedMap
 
 _FLASHY_FLIP_PROBABILITY_MULTIPLIER = 1.2
 _TIGHTEN_FLIP_PROBABILITY_MULTIPLIER = 0.7
@@ -27,8 +25,8 @@ def apply_edit_instruction(
     - max_consecutive_repeat: 같은 방향이 연속될 수 있는 한도 (반복 최소화)
     - flip_probability: 매 타일 직전과 반대 방향으로 꺾을 확률 (지그재그 정도)
     """
-    target_difficulty = _shift_difficulty(existing_map.difficulty, instruction.difficulty_delta)
-    profile = DIFFICULTY_PROFILES[target_difficulty]
+    target_difficulty = shift_difficulty(existing_map.difficulty, instruction.difficulty_delta)
+    profile = profile_for_level(target_difficulty)
 
     if instruction.emphasize_flashy:
         profile = replace(
@@ -58,9 +56,3 @@ def apply_edit_instruction(
         profile_override=profile,
         seed=seed,
     )
-
-
-def _shift_difficulty(base: Difficulty, delta: int) -> Difficulty:
-    index = _DIFFICULTY_ORDER.index(base)
-    new_index = max(0, min(len(_DIFFICULTY_ORDER) - 1, index + delta))
-    return _DIFFICULTY_ORDER[new_index]

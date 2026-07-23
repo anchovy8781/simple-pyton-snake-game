@@ -1,22 +1,32 @@
 """맵 생성 엔진 진입점: 오디오 분석 결과 -> ADOFAI 타일 시퀀스."""
 
 import random
+from dataclasses import replace
 
-from app.mapgen.difficulty import DIFFICULTY_PROFILES, DifficultyProfile
-from app.mapgen.models import Difficulty, GeneratedMap, Tile
+from app.mapgen.difficulty import DifficultyProfile, profile_for_level, with_flip_probability
+from app.mapgen.models import GeneratedMap, MapStyle, Tile
 from app.mapgen.pattern import generate_angles
 from app.mapgen.schedule import TileTiming, build_tile_schedule
 from app.models.audio import AudioAnalysisResult
 
 
 def generate_map(
-    analysis: AudioAnalysisResult, difficulty: Difficulty, seed: int | None = None
+    analysis: AudioAnalysisResult,
+    difficulty: int,
+    seed: int | None = None,
+    style: MapStyle | None = None,
 ) -> GeneratedMap:
-    """오디오 분석 결과 전체로부터 새 맵을 생성한다."""
-    profile = DIFFICULTY_PROFILES[difficulty]
+    """오디오 분석 결과 전체로부터 새 맵을 생성한다. difficulty는 1(가장 쉬움)~26(가장 어려움)."""
+    style = style or MapStyle()
+    profile = profile_for_level(difficulty)
+    if style.magic_circle:
+        # 마법진: 방향을 절대 바꾸지 않아 항상 한쪽으로만 꺾이는 나선/원형 경로를 만든다.
+        # (반복 최소화가 방향을 강제로 바꾸지 않도록 반복 허용 한도도 함께 넉넉히 늘린다.)
+        profile = with_flip_probability(profile, 0.0)
+        profile = replace(profile, max_consecutive_repeat=10**9)
     rng = random.Random(seed)
 
-    tile_timings = build_tile_schedule(analysis, profile, rng)
+    tile_timings = build_tile_schedule(analysis, profile, rng, style=style)
     turn_angles = generate_angles(
         tile_timings, profile.max_consecutive_repeat, rng, flip_probability=profile.flip_probability
     )
@@ -47,7 +57,7 @@ def regenerate_segment(
     existing_map: GeneratedMap,
     start_sec: float,
     end_sec: float,
-    difficulty: Difficulty | None = None,
+    difficulty: int | None = None,
     profile_override: DifficultyProfile | None = None,
     seed: int | None = None,
 ) -> GeneratedMap:
@@ -73,7 +83,7 @@ def regenerate_segment(
         raise ValueError("지정한 구간에 해당하는 타일이 없습니다")
 
     result_difficulty = difficulty if difficulty is not None else existing_map.difficulty
-    profile = profile_override if profile_override is not None else DIFFICULTY_PROFILES[result_difficulty]
+    profile = profile_override if profile_override is not None else profile_for_level(result_difficulty)
     rng = random.Random(seed)
 
     segment_timings = [

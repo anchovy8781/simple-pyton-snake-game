@@ -1,7 +1,7 @@
 import pytest
 
 from app.mapgen.engine import generate_map
-from app.mapgen.models import Difficulty, GeneratedMap, Tile
+from app.mapgen.models import GeneratedMap, Tile
 from app.storage.adofai_reader import parse_adofai_document
 from app.storage.adofai_writer import build_adofai_document
 from app.storage.exceptions import AdofaiParseError
@@ -10,7 +10,7 @@ from tests.mapgen_fixtures import make_analysis_result
 
 def test_document_structure_is_valid() -> None:
     analysis = make_analysis_result(bpm=128.0, duration_sec=16.0)
-    generated = generate_map(analysis, Difficulty.HARD, seed=1)
+    generated = generate_map(analysis, 18, seed=1)
 
     document = build_adofai_document(generated, song_filename="song.mp3", artist="Someone")
 
@@ -25,8 +25,8 @@ def test_document_structure_is_valid() -> None:
     assert settings["artist"] == "Someone"
 
 
-@pytest.mark.parametrize("difficulty", list(Difficulty))
-def test_round_trip_preserves_tile_timing(difficulty: Difficulty) -> None:
+@pytest.mark.parametrize("difficulty", [1, 9, 13, 18, 26])
+def test_round_trip_preserves_tile_timing(difficulty: int) -> None:
     analysis = make_analysis_result(bpm=140.0, duration_sec=20.0, drop_time_sec=10.0)
     generated = generate_map(analysis, difficulty, seed=42)
 
@@ -50,7 +50,7 @@ def test_round_trip_with_tempo_change_uses_set_speed() -> None:
             ]
         }
     )
-    generated = generate_map(analysis, Difficulty.NORMAL, seed=3)
+    generated = generate_map(analysis, 13, seed=3)
 
     document = build_adofai_document(generated, song_filename="song.wav")
 
@@ -70,7 +70,7 @@ def test_writer_uses_twirl_when_sign_changes() -> None:
         Tile(index=2, time_sec=0.5, turn_angle_deg=-90.0, bpm=120.0, split_n=2),
         Tile(index=3, time_sec=0.75, turn_angle_deg=-90.0, bpm=120.0, split_n=2),
     ]
-    generated = GeneratedMap(bpm=120.0, difficulty=Difficulty.NORMAL, duration_sec=1.0, tiles=tiles)
+    generated = GeneratedMap(bpm=120.0, difficulty=13, duration_sec=1.0, tiles=tiles)
 
     document = build_adofai_document(generated, song_filename="song.wav")
 

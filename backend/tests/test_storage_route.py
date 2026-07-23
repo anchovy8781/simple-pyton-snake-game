@@ -10,7 +10,7 @@ from tests.audio_fixtures import make_click_track
 client = TestClient(app)
 
 
-def _generate_map(difficulty: str = "hard", seed: int = 1) -> dict:
+def _generate_map(difficulty: str = "18", seed: int = 1) -> dict:
     sr = 22050
     y, _ = make_click_track(bpm=120.0, duration_sec=12.0, sr=sr, accent_every=4)
     buffer = io.BytesIO()
@@ -50,7 +50,7 @@ def test_export_endpoint_returns_downloadable_adofai_file() -> None:
 
 
 def test_export_then_import_round_trip_preserves_timing() -> None:
-    generated_map = _generate_map(difficulty="extreme", seed=7)
+    generated_map = _generate_map(difficulty="26", seed=7)
 
     export_response = client.post(
         "/storage/export",

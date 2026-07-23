@@ -1,20 +1,19 @@
 from app.ai.edit_engine import apply_edit_instruction
 from app.ai.models import EditInstruction
 from app.mapgen.engine import generate_map
-from app.mapgen.models import Difficulty
 from tests.mapgen_fixtures import make_analysis_result
 
 
 def test_apply_edit_instruction_changes_difficulty_and_only_segment_angles() -> None:
     analysis = make_analysis_result(duration_sec=16.0)
-    original_map = generate_map(analysis, Difficulty.NORMAL, seed=1)
+    original_map = generate_map(analysis, 13, seed=1)
 
     instruction = EditInstruction(
-        start_sec=4.0, end_sec=8.0, difficulty_delta=1, raw_instruction="20~35초를 더 어렵게"
+        start_sec=4.0, end_sec=8.0, difficulty_delta=4, raw_instruction="20~35초를 더 어렵게"
     )
     edited_map = apply_edit_instruction(original_map, instruction, seed=2)
 
-    assert edited_map.difficulty == Difficulty.HARD
+    assert edited_map.difficulty == 17
     assert [t.time_sec for t in edited_map.tiles] == [t.time_sec for t in original_map.tiles]
 
     for original_tile, new_tile in zip(original_map.tiles, edited_map.tiles):
@@ -22,29 +21,29 @@ def test_apply_edit_instruction_changes_difficulty_and_only_segment_angles() -> 
             assert original_tile.turn_angle_deg == new_tile.turn_angle_deg
 
 
-def test_apply_edit_instruction_clamps_difficulty_at_extreme() -> None:
+def test_apply_edit_instruction_clamps_difficulty_at_max() -> None:
     analysis = make_analysis_result(duration_sec=16.0)
-    original_map = generate_map(analysis, Difficulty.EXTREME, seed=1)
+    original_map = generate_map(analysis, 26, seed=1)
 
-    instruction = EditInstruction(start_sec=0.0, end_sec=16.0, difficulty_delta=5, raw_instruction="더 어렵게")
+    instruction = EditInstruction(start_sec=0.0, end_sec=16.0, difficulty_delta=20, raw_instruction="더 어렵게")
     edited_map = apply_edit_instruction(original_map, instruction, seed=2)
 
-    assert edited_map.difficulty == Difficulty.EXTREME
+    assert edited_map.difficulty == 26
 
 
-def test_apply_edit_instruction_clamps_difficulty_at_easy() -> None:
+def test_apply_edit_instruction_clamps_difficulty_at_min() -> None:
     analysis = make_analysis_result(duration_sec=16.0)
-    original_map = generate_map(analysis, Difficulty.EASY, seed=1)
+    original_map = generate_map(analysis, 1, seed=1)
 
-    instruction = EditInstruction(start_sec=0.0, end_sec=16.0, difficulty_delta=-5, raw_instruction="더 쉽게")
+    instruction = EditInstruction(start_sec=0.0, end_sec=16.0, difficulty_delta=-20, raw_instruction="더 쉽게")
     edited_map = apply_edit_instruction(original_map, instruction, seed=2)
 
-    assert edited_map.difficulty == Difficulty.EASY
+    assert edited_map.difficulty == 1
 
 
 def test_apply_edit_instruction_flashy_and_reduce_repetition_run_without_error() -> None:
     analysis = make_analysis_result(duration_sec=16.0)
-    original_map = generate_map(analysis, Difficulty.NORMAL, seed=1)
+    original_map = generate_map(analysis, 13, seed=1)
 
     instruction = EditInstruction(
         start_sec=0.0,

@@ -16,18 +16,24 @@ from app.ai.rule_based_parser import parse_instruction_rule_based
 logger = logging.getLogger(__name__)
 
 _PROMPT_TEMPLATE = """당신은 리듬 게임(A Dance of Fire and Ice) 맵 편집 도구의 지시 파서입니다.
+음악 싱크(박자 정확도)는 이미 생성 엔진이 회전각=박자 공식으로 항상 보장하므로,
+당신이 판단할 것은 오직 "이 구간에 어떤 난이도/스타일이 음악적으로 어울리는가"입니다.
+현재 BPM과 난이도, 드롭 위치를 참고해 요청의 의도에 맞는 조정 폭을 정하세요.
 사용자의 한국어 편집 요청을 분석해 아래 JSON 스키마로만 응답하세요. 다른 설명은 출력하지 마세요.
 
 스키마:
-{{"start_sec": number, "end_sec": number, "difficulty_delta": integer(-3~3),
+{{"start_sec": number, "end_sec": number, "difficulty_delta": integer(-10~10),
   "emphasize_flashy": boolean, "reduce_repetition": boolean, "tighten_timing": boolean}}
 
 - start_sec/end_sec: 요청이 가리키는 구간(초). 특정할 수 없으면 0 ~ {duration_sec}(곡 전체)로 응답하세요.
-- difficulty_delta: 더 어렵게 요청하면 양수(아주 많이 어렵게는 +2~+3), 더 쉽게 요청하면 음수, 언급 없으면 0.
+- difficulty_delta: 난이도는 1(가장 쉬움)~26(가장 어려움) 스케일이다. 더 어렵게 요청하면 양수
+  (아주 많이 어렵게는 +8~+10), 더 쉽게 요청하면 음수, 미묘한 변화만 원하면 ±2~3, 언급 없으면 0.
 - emphasize_flashy: 화려하거나 인상적으로 만들어달라는 요청이면 true.
 - reduce_repetition: 반복되는 패턴을 줄여달라는 요청이면 true.
 - tighten_timing: 박자/타이밍을 더 정확하게 맞춰달라는 요청이면 true.
 
+곡 BPM: {bpm}
+현재 난이도(1~26): {current_difficulty}
 곡 길이: {duration_sec}초
 알려진 드롭(강조 구간) 시각(초): {drop_times}
 사용자 요청: "{instruction}"
@@ -39,12 +45,16 @@ def parse_edit_instruction(
     duration_sec: float,
     drop_times_sec: list[float] | None = None,
     client: GeminiClient | None = None,
+    bpm: float = 0.0,
+    current_difficulty: int = 13,
 ) -> EditInstruction:
     client = client or GeminiClient()
 
     if client.is_configured:
         try:
-            return _parse_with_gemini(instruction, duration_sec, drop_times_sec or [], client)
+            return _parse_with_gemini(
+                instruction, duration_sec, drop_times_sec or [], client, bpm, current_difficulty
+            )
         except (AIServiceError, InstructionParseError) as exc:
             logger.warning("Gemini 파싱 실패, 규칙 기반 파서로 대체합니다: %s", exc)
 
@@ -52,10 +62,19 @@ def parse_edit_instruction(
 
 
 def _parse_with_gemini(
-    instruction: str, duration_sec: float, drop_times_sec: list[float], client: GeminiClient
+    instruction: str,
+    duration_sec: float,
+    drop_times_sec: list[float],
+    client: GeminiClient,
+    bpm: float,
+    current_difficulty: int,
 ) -> EditInstruction:
     prompt = _PROMPT_TEMPLATE.format(
-        duration_sec=duration_sec, drop_times=drop_times_sec, instruction=instruction
+        duration_sec=duration_sec,
+        drop_times=drop_times_sec,
+        instruction=instruction,
+        bpm=bpm,
+        current_difficulty=current_difficulty,
     )
     raw_text = client.generate_text(prompt)
 

@@ -22,12 +22,12 @@ def test_generate_endpoint_returns_map_for_wav_upload() -> None:
     response = client.post(
         "/mapgen/generate",
         files={"file": ("song.wav", _make_wav_bytes(), "audio/wav")},
-        data={"difficulty": "hard", "seed": "5"},
+        data={"difficulty": "18", "seed": "5"},
     )
 
     assert response.status_code == 200
     data = response.json()
-    assert data["difficulty"] == "hard"
+    assert data["difficulty"] == 18
     assert len(data["tiles"]) > 0
     assert data["tiles"][0]["turn_angle_deg"] == 0.0
 
@@ -36,7 +36,7 @@ def test_generate_endpoint_rejects_unsupported_extension() -> None:
     response = client.post(
         "/mapgen/generate",
         files={"file": ("song.flac", io.BytesIO(b"not audio"), "audio/flac")},
-        data={"difficulty": "normal"},
+        data={"difficulty": "13"},
     )
 
     assert response.status_code == 400
@@ -46,7 +46,7 @@ def test_regenerate_segment_endpoint_updates_existing_map() -> None:
     generate_response = client.post(
         "/mapgen/generate",
         files={"file": ("song.wav", _make_wav_bytes(), "audio/wav")},
-        data={"difficulty": "normal", "seed": "1"},
+        data={"difficulty": "13", "seed": "1"},
     )
     assert generate_response.status_code == 200
     generated_map = generate_response.json()
@@ -71,7 +71,7 @@ def test_regenerate_segment_endpoint_rejects_invalid_range() -> None:
     generate_response = client.post(
         "/mapgen/generate",
         files={"file": ("song.wav", _make_wav_bytes(), "audio/wav")},
-        data={"difficulty": "normal", "seed": "1"},
+        data={"difficulty": "13", "seed": "1"},
     )
     generated_map = generate_response.json()
 

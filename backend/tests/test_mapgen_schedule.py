@@ -3,16 +3,16 @@ from dataclasses import replace
 
 import pytest
 
-from app.mapgen.difficulty import DIFFICULTY_PROFILES
-from app.mapgen.models import Difficulty
+from app.mapgen.difficulty import profile_for_level
+from app.mapgen.models import MapStyle
 from app.mapgen.schedule import build_tile_schedule
-from app.models.audio import TempoChangePoint
+from app.models.audio import EnergyPoint, TempoChangePoint
 from tests.mapgen_fixtures import make_analysis_result
 
 
 def test_build_tile_schedule_marks_downbeats_and_drop_window() -> None:
     analysis = make_analysis_result(bpm=120.0, duration_sec=16.0, drop_time_sec=8.0)
-    profile = DIFFICULTY_PROFILES[Difficulty.EASY]  # beat_split_weights={1: 1.0} -> 비트만 그대로
+    profile = profile_for_level(1)  # beat_split_weights={1: 1.0} -> 비트만 그대로
 
     timings = build_tile_schedule(analysis, profile, random.Random(0))
 
@@ -31,7 +31,7 @@ def test_build_tile_schedule_marks_downbeats_and_drop_window() -> None:
 
 def test_build_tile_schedule_splits_beats_when_forced() -> None:
     analysis = make_analysis_result(bpm=120.0, duration_sec=8.0, drop_time_sec=None)
-    base_profile = DIFFICULTY_PROFILES[Difficulty.EXTREME]
+    base_profile = profile_for_level(26)
     forced_profile = replace(base_profile, beat_split_weights={2: 1.0})
 
     timings = build_tile_schedule(analysis, forced_profile, random.Random(1))
@@ -45,7 +45,7 @@ def test_build_tile_schedule_splits_beats_when_forced() -> None:
 def test_split_tiles_have_exact_equal_spacing_within_a_beat() -> None:
     bpm = 120.0
     analysis = make_analysis_result(bpm=bpm, duration_sec=8.0, drop_time_sec=None)
-    base_profile = DIFFICULTY_PROFILES[Difficulty.HARD]
+    base_profile = profile_for_level(18)
     forced_profile = replace(base_profile, beat_split_weights={3: 1.0})
 
     timings = build_tile_schedule(analysis, forced_profile, random.Random(2))
@@ -66,7 +66,7 @@ def test_build_tile_schedule_respects_tempo_sections() -> None:
             ]
         }
     )
-    profile = DIFFICULTY_PROFILES[Difficulty.EASY]
+    profile = profile_for_level(1)
 
     timings = build_tile_schedule(analysis, profile, random.Random(0))
 
@@ -77,3 +77,36 @@ def test_build_tile_schedule_respects_tempo_sections() -> None:
     assert before and after
     assert all(t.bpm == 120.0 for t in before)
     assert all(t.bpm == 180.0 for t in after)
+
+
+def test_enable_rush_avoids_split_one_in_high_energy_window() -> None:
+    analysis = make_analysis_result(bpm=120.0, duration_sec=12.0, drop_time_sec=None)
+    # 4~10초 구간을 고에너지(질주) 구간으로 만든다.
+    energy_profile = [
+        EnergyPoint(time_sec=round(i * 0.1, 3), rms_db=-6.0 if 4.0 <= i * 0.1 <= 10.0 else -40.0)
+        for i in range(120)
+    ]
+    analysis = analysis.model_copy(update={"energy_profile": energy_profile})
+    profile = profile_for_level(13)
+
+    timings = build_tile_schedule(analysis, profile, random.Random(3), style=MapStyle(enable_rush=True))
+
+    rush_tiles = [t for t in timings if 4.5 <= t.time_sec <= 9.5]
+    assert rush_tiles
+    assert all(t.split_n > 1 for t in rush_tiles)
+
+
+def test_enable_slow_lowers_bpm_in_quiet_window() -> None:
+    analysis = make_analysis_result(bpm=120.0, duration_sec=12.0, drop_time_sec=None)
+    energy_profile = [
+        EnergyPoint(time_sec=round(i * 0.1, 3), rms_db=-50.0 if 4.0 <= i * 0.1 <= 8.0 else -10.0)
+        for i in range(120)
+    ]
+    analysis = analysis.model_copy(update={"energy_profile": energy_profile})
+    profile = profile_for_level(1)
+
+    timings = build_tile_schedule(analysis, profile, random.Random(4), style=MapStyle(enable_slow=True))
+
+    quiet_tiles = [t for t in timings if 4.5 <= t.time_sec <= 7.5]
+    assert quiet_tiles
+    assert all(t.bpm < 120.0 for t in quiet_tiles)

@@ -1,15 +1,28 @@
 """맵 생성 엔진이 다루는 데이터 모델."""
 
-from enum import Enum
+from pydantic import BaseModel, Field
 
-from pydantic import BaseModel
+MIN_DIFFICULTY = 1
+MAX_DIFFICULTY = 26
 
 
-class Difficulty(str, Enum):
-    EASY = "easy"
-    NORMAL = "normal"
-    HARD = "hard"
-    EXTREME = "extreme"
+def clamp_difficulty(level: int) -> int:
+    return max(MIN_DIFFICULTY, min(MAX_DIFFICULTY, level))
+
+
+class MapStyle(BaseModel):
+    """패턴의 전체적인 모양을 바꾸는 선택적 스타일 옵션.
+
+    난이도(회전 빈도/밀도)와는 독립적으로, 생성된 맵의 "느낌"을 바꾼다.
+    """
+
+    # 마법진: 방향을 항상 한쪽으로만 꺾어 나선/원형 모양의 경로를 만든다.
+    magic_circle: bool = False
+    # 질주맵: 지속적으로 에너지가 높은 구간에서 쉬는 타일(split=1) 없이
+    # 빠른 연속 타일로 채운다.
+    enable_rush: bool = False
+    # 슬로우: 곡에서 가장 조용한 구간을 찾아 그 부분의 템포를 일시적으로 늦춘다.
+    enable_slow: bool = False
 
 
 class Tile(BaseModel):
@@ -36,6 +49,7 @@ class Tile(BaseModel):
 
 class GeneratedMap(BaseModel):
     bpm: float
-    difficulty: Difficulty
+    # 난이도: 1(가장 쉬움) ~ 26(가장 어려움) 정수 스케일.
+    difficulty: int = Field(ge=MIN_DIFFICULTY, le=MAX_DIFFICULTY)
     duration_sec: float
     tiles: list[Tile]

@@ -34,7 +34,10 @@ class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _artistController = TextEditingController();
 
   XFile? _selectedAudioFile;
-  Difficulty _selectedDifficulty = Difficulty.normal;
+  int _selectedDifficulty = 13;
+  bool _magicCircle = false;
+  bool _enableRush = false;
+  bool _enableSlow = false;
 
   bool _isGenerating = false;
   bool _isEditing = false;
@@ -88,6 +91,7 @@ class _HomeScreenState extends State<HomeScreen> {
         fileName: audioFile.name,
         difficulty: _selectedDifficulty,
         seed: _parseSeed(),
+        style: MapStyle(magicCircle: _magicCircle, enableRush: _enableRush, enableSlow: _enableSlow),
       );
       setState(() {
         _generatedMap = map;
@@ -264,6 +268,26 @@ class _HomeScreenState extends State<HomeScreen> {
               value: _selectedDifficulty,
               onChanged: (d) => setState(() => _selectedDifficulty = d),
             ),
+            Wrap(
+              spacing: 4,
+              children: [
+                FilterChip(
+                  label: const Text('마법진(나선형)'),
+                  selected: _magicCircle,
+                  onSelected: busy ? null : (v) => setState(() => _magicCircle = v),
+                ),
+                FilterChip(
+                  label: const Text('질주맵'),
+                  selected: _enableRush,
+                  onSelected: busy ? null : (v) => setState(() => _enableRush = v),
+                ),
+                FilterChip(
+                  label: const Text('슬로우 구간'),
+                  selected: _enableSlow,
+                  onSelected: busy ? null : (v) => setState(() => _enableSlow = v),
+                ),
+              ],
+            ),
             const SizedBox(height: 12),
             Row(
               children: [
@@ -431,7 +455,7 @@ class _MapStats extends StatelessWidget {
       runSpacing: 4,
       children: [
         Chip(label: Text('BPM ${map.bpm.toStringAsFixed(1)}')),
-        Chip(label: Text('난이도 ${map.difficulty.label}')),
+        Chip(label: Text('난이도 Lv.${map.difficulty}')),
         Chip(label: Text('길이 $minutes:${seconds.toString().padLeft(2, '0')}')),
         Chip(label: Text('타일 ${map.tiles.length}개')),
       ],

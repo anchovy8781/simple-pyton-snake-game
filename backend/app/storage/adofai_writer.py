@@ -24,15 +24,9 @@ Twirl 여부와 무관하게 이미 검증된 공식(아래 adofai_reader.py의 
 
 from pathlib import Path
 
-from app.mapgen.models import Difficulty, GeneratedMap
+from app.mapgen.models import GeneratedMap
 
 _BPM_CHANGE_TOLERANCE = 1e-6
-_DIFFICULTY_TO_SETTINGS_VALUE = {
-    Difficulty.EASY: 1,
-    Difficulty.NORMAL: 3,
-    Difficulty.HARD: 5,
-    Difficulty.EXTREME: 7,
-}
 
 
 def build_adofai_document(
@@ -59,7 +53,8 @@ def build_adofai_document(
         "offset": offset_ms,
         "pitch": 100,
         "volume": 100,
-        "difficulty": _DIFFICULTY_TO_SETTINGS_VALUE[generated_map.difficulty],
+        # 표시용 난이도 값 — 게임플레이에는 영향을 주지 않는다(1~26).
+        "difficulty": generated_map.difficulty,
         "trackColor": "debb7b",
         "secondaryTrackColor": "ffffff",
         "backgroundColor": "000000",

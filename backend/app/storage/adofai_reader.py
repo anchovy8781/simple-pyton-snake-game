@@ -11,15 +11,10 @@ Checkpoint 같은 이 도구가 만들지 않는 액션 종류는 무시되므�
 타이밍은 부정확할 수 있다.
 """
 
-from app.mapgen.models import Difficulty, GeneratedMap, Tile
+from app.mapgen.models import GeneratedMap, Tile, clamp_difficulty
 from app.storage.exceptions import AdofaiParseError
 
-_SETTINGS_VALUE_TO_DIFFICULTY = {
-    1: Difficulty.EASY,
-    3: Difficulty.NORMAL,
-    5: Difficulty.HARD,
-    7: Difficulty.EXTREME,
-}
+_DEFAULT_DIFFICULTY = 13
 
 
 def parse_adofai_document(document: dict) -> GeneratedMap:
@@ -73,7 +68,11 @@ def parse_adofai_document(document: dict) -> GeneratedMap:
             )
         )
 
-    difficulty = _SETTINGS_VALUE_TO_DIFFICULTY.get(settings.get("difficulty"), Difficulty.NORMAL)
+    raw_difficulty = settings.get("difficulty")
+    try:
+        difficulty = clamp_difficulty(int(raw_difficulty))
+    except (TypeError, ValueError):
+        difficulty = _DEFAULT_DIFFICULTY
 
     return GeneratedMap(
         bpm=base_bpm,

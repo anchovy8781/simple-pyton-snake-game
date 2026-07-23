@@ -1,12 +1,12 @@
 import pytest
 
 from app.mapgen.engine import generate_map, regenerate_segment
-from app.mapgen.models import Difficulty
+from app.mapgen.models import MapStyle
 from tests.mapgen_fixtures import make_analysis_result
 
 
-@pytest.mark.parametrize("difficulty", list(Difficulty))
-def test_generate_map_produces_valid_map(difficulty: Difficulty) -> None:
+@pytest.mark.parametrize("difficulty", [1, 9, 13, 18, 26])
+def test_generate_map_produces_valid_map(difficulty: int) -> None:
     analysis = make_analysis_result()
 
     result = generate_map(analysis, difficulty, seed=123)
@@ -25,15 +25,25 @@ def test_generate_map_produces_valid_map(difficulty: Difficulty) -> None:
 def test_generate_map_is_deterministic_for_same_seed() -> None:
     analysis = make_analysis_result()
 
-    map_a = generate_map(analysis, Difficulty.HARD, seed=99)
-    map_b = generate_map(analysis, Difficulty.HARD, seed=99)
+    map_a = generate_map(analysis, 18, seed=99)
+    map_b = generate_map(analysis, 18, seed=99)
 
     assert [t.turn_angle_deg for t in map_a.tiles] == [t.turn_angle_deg for t in map_b.tiles]
 
 
+def test_magic_circle_style_never_flips_direction() -> None:
+    analysis = make_analysis_result(duration_sec=16.0)
+
+    result = generate_map(analysis, 18, seed=7, style=MapStyle(magic_circle=True))
+
+    signs = [1 if t.turn_angle_deg > 0 else (-1 if t.turn_angle_deg < 0 else 0) for t in result.tiles[1:]]
+    non_zero_signs = {s for s in signs if s != 0}
+    assert len(non_zero_signs) <= 1
+
+
 def test_regenerate_segment_keeps_timing_and_only_changes_segment_angles() -> None:
     analysis = make_analysis_result(duration_sec=16.0)
-    original = generate_map(analysis, Difficulty.NORMAL, seed=1)
+    original = generate_map(analysis, 13, seed=1)
 
     start_sec, end_sec = 4.0, 8.0
     regenerated = regenerate_segment(original, start_sec, end_sec, seed=2)
@@ -48,7 +58,7 @@ def test_regenerate_segment_keeps_timing_and_only_changes_segment_angles() -> No
 
 def test_regenerate_segment_rejects_invalid_range() -> None:
     analysis = make_analysis_result()
-    original = generate_map(analysis, Difficulty.NORMAL, seed=1)
+    original = generate_map(analysis, 13, seed=1)
 
     with pytest.raises(ValueError):
         regenerate_segment(original, 8.0, 4.0)
@@ -59,8 +69,8 @@ def test_regenerate_segment_rejects_invalid_range() -> None:
 
 def test_regenerate_segment_can_override_difficulty() -> None:
     analysis = make_analysis_result()
-    original = generate_map(analysis, Difficulty.EASY, seed=1)
+    original = generate_map(analysis, 1, seed=1)
 
-    regenerated = regenerate_segment(original, 2.0, 6.0, difficulty=Difficulty.EXTREME, seed=1)
+    regenerated = regenerate_segment(original, 2.0, 6.0, difficulty=26, seed=1)
 
-    assert regenerated.difficulty == Difficulty.EXTREME
+    assert regenerated.difficulty == 26

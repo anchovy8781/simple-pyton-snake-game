@@ -36,11 +36,15 @@ class ApiClient {
   Future<GeneratedMap> generateMap({
     required Uint8List audioBytes,
     required String fileName,
-    required Difficulty difficulty,
+    required int difficulty,
     int? seed,
+    MapStyle style = const MapStyle(),
   }) async {
     final request = http.MultipartRequest('POST', _uri('/mapgen/generate'))
-      ..fields['difficulty'] = difficulty.apiValue
+      ..fields['difficulty'] = difficulty.toString()
+      ..fields['magic_circle'] = style.magicCircle.toString()
+      ..fields['enable_rush'] = style.enableRush.toString()
+      ..fields['enable_slow'] = style.enableSlow.toString()
       ..files.add(http.MultipartFile.fromBytes('file', audioBytes, filename: fileName));
 
     if (seed != null) {

@@ -13,16 +13,28 @@ split_n/bpm으로부터 역산한 실제 게임 내 타이밍이 여기서 기�
 정확히 일치한다. 그 결과 템포가 바뀌는 지점은 실제 정박이 아니라 그
 근처의 가장 가까운 박 경계에서 적용된다 — 오차는 최대 한 박 이내로,
 템포 변화 검출 자체도 근사치이므로 충분히 허용 가능한 수준이다.
+
+MapStyle 옵션(질주맵/슬로우)도 여기서 반영한다:
+- enable_rush(질주맵): 지속적으로 에너지가 높은 구간에서는 split=1(쉬는 타일
+  없이 직진)을 후보에서 빼, 끊임없이 빠르게 이어지는 느낌을 만든다.
+- enable_slow(슬로우): 곡에서 가장 조용하고 긴 구간을 찾아 그 구간만 BPM을
+  낮춘 임시 템포 구간으로 쪼갠다(SetSpeed 액션으로 자연스럽게 이어진다).
 """
 
 import random
 from dataclasses import dataclass
 
 from app.mapgen.difficulty import DifficultyProfile
+from app.mapgen.models import MapStyle
 from app.models.audio import AudioAnalysisResult, EnergyPoint, TempoChangePoint
 
 DOWNBEAT_EPSILON_SEC = 0.05
 DROP_EMPHASIS_WINDOW_SEC = 1.5
+RUSH_ENERGY_THRESHOLD_DB = -15.0
+RUSH_MIN_WINDOW_SEC = 2.0
+SLOW_ENERGY_THRESHOLD_DB = -35.0
+SLOW_MIN_WINDOW_SEC = 2.0
+SLOW_TEMPO_FACTOR = 0.6
 _MIN_STEP_SEC = 1e-6
 
 
@@ -39,7 +51,10 @@ class TileTiming:
 
 
 def build_tile_schedule(
-    analysis: AudioAnalysisResult, profile: DifficultyProfile, rng: random.Random
+    analysis: AudioAnalysisResult,
+    profile: DifficultyProfile,
+    rng: random.Random,
+    style: MapStyle | None = None,
 ) -> list[TileTiming]:
     """구간별 BPM 그리드 위에서, 난이도에 따라 각 박을 몇 개의 타일로
     나눌지 선택해 타임라인을 만든다. 드롭 구간과 높은 에너지 구간은 더
@@ -49,12 +64,19 @@ def build_tile_schedule(
     if not analysis.beat_times:
         return []
 
+    style = style or MapStyle()
+
     sections = _build_tempo_sections(analysis)
+    if style.enable_slow:
+        sections = _apply_slow_sections(sections, analysis.energy_profile)
     if not sections:
         return []
 
     downbeat_times = analysis.downbeat_times
     drop_times = [d.time_sec for d in analysis.drops]
+    rush_windows = _find_windows(
+        analysis.energy_profile, RUSH_ENERGY_THRESHOLD_DB, RUSH_MIN_WINDOW_SEC, above=True
+    ) if style.enable_rush else []
     end_time = sections[-1][1]
 
     def bpm_at(t: float) -> float:
@@ -83,8 +105,9 @@ def build_tile_schedule(
         bpm = bpm_at(t)
         beat_duration = 60.0 / bpm
         near_drop = _is_within_drop_window(t, drop_times, DROP_EMPHASIS_WINDOW_SEC)
+        in_rush = _is_within_any_window(t, rush_windows)
         energy_db = _nearest_energy_db(t, analysis.energy_profile)
-        split_n = _choose_split(profile, rng, near_drop, energy_db)
+        split_n = _choose_split(profile, rng, near_drop, in_rush, energy_db)
         sub_duration = beat_duration / split_n
 
         for _ in range(split_n):
@@ -121,19 +144,52 @@ def _build_tempo_sections(analysis: AudioAnalysisResult) -> list[tuple[float, fl
     return sections
 
 
+def _apply_slow_sections(
+    sections: list[tuple[float, float, float]], energy_profile: list[EnergyPoint]
+) -> list[tuple[float, float, float]]:
+    """가장 길고 조용한 구간을 찾아 그 부분만 템포를 늦춘 구간으로 쪼갠다."""
+    quiet_windows = _find_windows(energy_profile, SLOW_ENERGY_THRESHOLD_DB, SLOW_MIN_WINDOW_SEC, above=False)
+    if not quiet_windows:
+        return sections
+
+    quiet_start, quiet_end = max(quiet_windows, key=lambda w: w[1] - w[0])
+
+    new_sections: list[tuple[float, float, float]] = []
+    for start, end, bpm in sections:
+        overlap_start = max(start, quiet_start)
+        overlap_end = min(end, quiet_end)
+        if overlap_start >= overlap_end:
+            new_sections.append((start, end, bpm))
+            continue
+
+        if start < overlap_start:
+            new_sections.append((start, overlap_start, bpm))
+        new_sections.append((overlap_start, overlap_end, bpm * SLOW_TEMPO_FACTOR))
+        if overlap_end < end:
+            new_sections.append((overlap_end, end, bpm))
+
+    return new_sections
+
+
 def _choose_split(
-    profile: DifficultyProfile, rng: random.Random, near_drop: bool, energy_db: float
+    profile: DifficultyProfile, rng: random.Random, near_drop: bool, in_rush: bool, energy_db: float
 ) -> int:
     normalized_energy = _normalize_energy(energy_db)
     energy_multiplier = 1.0 + profile.energy_bias_strength * normalized_energy
 
     splits = list(profile.beat_split_weights.keys())
+    if in_rush and len(splits) > 1:
+        # 질주맵: 쉬는 타일(split=1) 없이 계속 움직이게 한다.
+        splits = [n for n in splits if n > 1] or splits
+
     weights = []
     for n in splits:
-        w = profile.beat_split_weights[n]
+        w = profile.beat_split_weights.get(n, 1.0)
         if n > 1:
             w *= energy_multiplier
             if near_drop:
+                w *= profile.drop_split_bonus
+            if in_rush:
                 w *= profile.drop_split_bonus
         weights.append(w)
 
@@ -146,6 +202,40 @@ def _is_near_any(t: float, candidates: list[float], epsilon: float) -> bool:
 
 def _is_within_drop_window(t: float, drop_times: list[float], window_sec: float) -> bool:
     return any(0 <= t - d <= window_sec for d in drop_times)
+
+
+def _is_within_any_window(t: float, windows: list[tuple[float, float]]) -> bool:
+    return any(start <= t < end for start, end in windows)
+
+
+def _find_windows(
+    energy_profile: list[EnergyPoint], threshold_db: float, min_duration_sec: float, above: bool
+) -> list[tuple[float, float]]:
+    """에너지가 threshold_db보다 (above면 크거나, 아니면 작거나) 같은 상태가
+    min_duration_sec 이상 지속되는 구간들을 찾는다.
+    """
+    if not energy_profile:
+        return []
+
+    points = sorted(energy_profile, key=lambda p: p.time_sec)
+    windows: list[tuple[float, float]] = []
+    run_start: float | None = None
+    prev_t = points[0].time_sec
+
+    for point in points:
+        matches = point.rms_db >= threshold_db if above else point.rms_db <= threshold_db
+        if matches and run_start is None:
+            run_start = point.time_sec
+        elif not matches and run_start is not None:
+            if prev_t - run_start >= min_duration_sec:
+                windows.append((run_start, prev_t))
+            run_start = None
+        prev_t = point.time_sec
+
+    if run_start is not None and prev_t - run_start >= min_duration_sec:
+        windows.append((run_start, prev_t))
+
+    return windows
 
 
 def _nearest_energy_db(t: float, energy_profile: list[EnergyPoint]) -> float:

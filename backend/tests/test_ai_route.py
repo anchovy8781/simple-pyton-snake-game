@@ -9,7 +9,7 @@ from tests.audio_fixtures import make_click_track
 client = TestClient(app)
 
 
-def _generate_map(difficulty: str = "normal", seed: int = 1) -> dict:
+def _generate_map(difficulty: str = "13", seed: int = 1) -> dict:
     sr = 22050
     y, _ = make_click_track(bpm=120.0, duration_sec=12.0, sr=sr, accent_every=4)
     buffer = io.BytesIO()
@@ -42,7 +42,7 @@ def test_edit_segment_endpoint_applies_rule_based_instruction() -> None:
     assert data["parsed_instruction"]["source"] == "rule_based"
     assert data["parsed_instruction"]["start_sec"] == 2.0
     assert data["parsed_instruction"]["end_sec"] == 6.0
-    assert data["map"]["difficulty"] == "hard"
+    assert data["map"]["difficulty"] == 17
     assert [t["time_sec"] for t in data["map"]["tiles"]] == [
         t["time_sec"] for t in generated_map["tiles"]
     ]

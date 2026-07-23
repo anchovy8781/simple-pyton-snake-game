@@ -6,14 +6,14 @@ def test_parses_explicit_time_range_and_harder() -> None:
 
     assert result.start_sec == 20.0
     assert result.end_sec == 35.0
-    assert result.difficulty_delta == 1
+    assert result.difficulty_delta == 4
     assert result.source == "rule_based"
 
 
 def test_parses_extreme_keyword_as_bigger_delta() -> None:
     result = parse_instruction_rule_based("여기 극악으로 만들어줘", duration_sec=60.0)
 
-    assert result.difficulty_delta == 2
+    assert result.difficulty_delta == 10
 
 
 def test_parses_drop_keyword_using_known_drop_time() -> None:
@@ -31,7 +31,7 @@ def test_parses_latter_half_and_easier() -> None:
 
     assert result.start_sec == 50.0
     assert result.end_sec == 100.0
-    assert result.difficulty_delta == -1
+    assert result.difficulty_delta == -4
 
 
 def test_parses_first_part() -> None:
